@@ -13,7 +13,7 @@
       "binding": "DB",
       "database_name": "yaf-db",
       // 部署前执行 `npx wrangler d1 create yaf-db`，把返回的 id 填到这里
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "e8635755-c827-4471-becd-45712f518874",
       "migrations_dir": "migrations"
     }
   ]
