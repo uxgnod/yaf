@@ -1,0 +1,33 @@
+{
+  "name": "yaf",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Yet Another Flomo — a flomo-like memo app on Cloudflare Workers + D1",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "db:migrate:local": "wrangler d1 migrations apply yaf-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply yaf-db --remote",
+    "deploy": "vite build && wrangler deploy"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.17",
+    "hono": "^4.13.13",
+    "marked": "^18.1.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.64.0",
+    "@cloudflare/workers-types": "^5.20261016.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "wrangler": "^4.151.0"
+  }
+}
