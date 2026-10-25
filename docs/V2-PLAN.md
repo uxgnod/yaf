@@ -28,12 +28,12 @@
 目标：确认 ClawBot 协议在 Worker 上可用，再决定第 4 步做不做。
 
 - [x] 在 Worker 里请求二维码（`get_bot_qrcode`，POST + `bot_type=3`），手机扫码绑定成功（2026-10-25）
-- [ ] 轮询扫码状态（`get_qrcode_status`）直到 `confirmed`，拿到 `bot_token`
-- [ ] 长轮询 `getupdates` 收到一条文字消息
-- [ ] 用 `sendmessage` 回复一条
+- [x] 轮询扫码状态（`get_qrcode_status`）直到 `confirmed`，拿到 `bot_token`
+- [x] 长轮询 `getupdates` 收到文字、图片、语音消息（线上 2026-10-25 21:52–21:57）
+- [ ] 用 `sendmessage` 回复「已记录」（代码已做，待用户确认微信里是否收到）
 - [x] 实测：发一条语音，`voice_item.text` 有值（3.6 秒的语音，微信给了转写）
 - [ ] 实测：绑定 yaf 后，原来连接的 OpenClaw 是否被断开
-- [ ] 结论写进 ROADMAP 第 9 节（决策记录）
+- [x] 结论写进 ROADMAP 第 9 节（决策记录）
 
 **验收**：在微信里发一条文字，Worker 日志里能看到，并且微信能收到回复。
 
@@ -135,7 +135,7 @@
 - [x] 文字 → memo（`source = wechat`，按规则追加 `#微信`）
 - [x] 图片：下载 → `@noble/ciphers` AES-128-ECB 解密 → 存 R2（开通后）→ 视觉模型 `mistral-small-3.1-24b` 生成描述（用于搜索和向量；未开通 R2 时只存描述）
 - [x] 语音：正文用 `voice_item.text`；SILK 原文件存 R2；回放改为**浏览器端**用 `silk-wasm` 解码成 wav（Workers 上跑不了，见决策记录）
-- [ ] 语音转写兜底：`voice_item.text` 为空时，先存「[语音] 转写中…」，后台用 `silk-wasm` 解码成 wav → Workers AI `@cf/openai/whisper-large-v3-turbo` 转写 → 更新正文、标签和向量（是否需要取决于第 0 步实测）
+- [x] ~~语音转写兜底~~：实测微信会给转写，暂不需要；为空时正文标记「[语音]（微信未提供转写）」。原计划：`voice_item.text` 为空时，先存「[语音] 转写中…」，后台用 `silk-wasm` 解码成 wav → Workers AI `@cf/openai/whisper-large-v3-turbo` 转写 → 更新正文、标签和向量（是否需要取决于第 0 步实测）
 - [x] 合并连续消息（2 分钟内，默认关）
 - [x] 收录后回复「已记录 · #标签」（在 24 小时 `context_token` 窗口内）
 - [x] 适配层独立：协议失效时只影响微信功能，并在设置页显示错误状态
