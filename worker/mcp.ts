@@ -6,6 +6,7 @@ import type { Env, Scope, User } from "./env";
 import { findToken } from "./lib/pat";
 import { createMemo, getMemo, listMemos, listTags, MemoError, type Memo } from "./memo-service";
 import { related, scheduleIndex, search } from "./search";
+import { getInsight, listInsights } from "./insights";
 
 function formatMemo(m: Memo) {
   const time = new Date(m.createdAt).toISOString();
@@ -98,6 +99,43 @@ function createServer(env: Env, ctx: ExecutionContext, user: User, scopes: Scope
       const list = await related(env, user.id, id, limit ?? 5);
       if (!list.length) return text("没有找到相关的 memo（可能还没有建立语义索引）。");
       return text(list.map((m) => `相似度 ${m.score}\n${formatMemo(m)}`).join("\n\n---\n\n"));
+    },
+  );
+
+  server.registerTool(
+    "list_insights",
+    {
+      title: "洞察报告",
+      description:
+        "列出 yaf 按计划生成的洞察报告（反复出现的主题、新的连接、想做未做、值得追问的问题）。传 id 时返回该报告全文，否则返回最近的报告列表和最新一份的全文。",
+      inputSchema: z.object({
+        id: z.string().optional().describe("报告 id"),
+        limit: z.number().int().min(1).max(20).optional().describe("列表条数，默认 5"),
+      }),
+    },
+    async ({ id, limit }) => {
+      if (!can("insights:read")) return denied("insights:read");
+      const { insights: list } = await listInsights(env.DB, user.id, limit ?? 5);
+      const targetId = id ?? list.find((i) => i.status === "ready")?.id;
+      const head = list
+        .map((i) => `- [${i.id}] ${new Date(i.createdAt).toISOString().slice(0, 10)} ${i.title ?? i.planName ?? ""}（${i.status}）`)
+        .join("\n");
+      if (!targetId) return text(list.length ? `最近的报告：\n${head}` : "还没有洞察报告。");
+      const ins = await getInsight(env.DB, user.id, targetId);
+      if (!ins?.content) return text(`最近的报告：\n${head}\n\n报告 ${targetId} 还没有生成完成。`);
+      const c = ins.content;
+      const cite = (ids: string[]) => ids.join(", ");
+      const section = (name: string, items: { title: string; detail: string; memoIds: string[] }[]) =>
+        items.length ? `\n## ${name}\n` + items.map((it) => `- ${it.title}：${it.detail}（memo ${cite(it.memoIds)}）`).join("\n") : "";
+      return text(
+        (id ? "" : `最近的报告：\n${head}\n\n---\n\n`) +
+          `# ${ins.title}\n${c.summary}` +
+          section("反复出现的主题", c.themes) +
+          section("新的连接", c.connections) +
+          section("想做未做", c.unfinished) +
+          (c.questions.length ? `\n## 值得追问的问题\n` + c.questions.map((q) => `- ${q.question}（memo ${cite(q.memoIds)}）`).join("\n") : "") +
+          `\n\n引用的 memo 可以用 get_memo 读取。`,
+      );
     },
   );
 

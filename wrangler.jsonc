@@ -22,10 +22,17 @@
   // 语义检索：1024 维 cosine；metadata.userId 已建过滤索引
   // 本地开发同样连线上索引（Vectorize 没有本地模拟），按 userId 过滤，互不影响
   "vectorize": [{ "binding": "VECTORS", "index_name": "yaf-memos", "remote": true }],
-  // 每 15 分钟：补算缺失的向量（第 3 步起还会检查到期的洞察计划）
+  // 每 15 分钟：启动到期的洞察计划、补算缺失的向量
   "triggers": { "crons": ["*/15 * * * *"] },
   "workflows": [
     // 存量 memo 分批补算向量 / 重建索引
-    { "name": "yaf-index", "binding": "INDEX_WORKFLOW", "class_name": "IndexWorkflow" }
-  ]
+    { "name": "yaf-index", "binding": "INDEX_WORKFLOW", "class_name": "IndexWorkflow" },
+    // 洞察生成：取材料 → 聚类 → 分簇总结 → 汇总 → 校验引用
+    { "name": "yaf-insight", "binding": "INSIGHT_WORKFLOW", "class_name": "InsightWorkflow" }
+  ],
+  "vars": {
+    // 模型请求经过账户的 AI Gateway（日志、缓存、限流）；留空则直连
+    "AI_GATEWAY_ID": "default"
+  }
+  // secret：ENCRYPTION_KEY（加密用户的 Claude API key）、SETUP_TOKEN
 }

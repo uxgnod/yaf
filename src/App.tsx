@@ -45,5 +45,5 @@ export function App() {
   };
   if (path === "/device") return <DeviceApprove />;
   if (path.startsWith("/settings")) return <Settings user={phase.user} path={path} />;
-  return <Home user={phase.user} view={path.startsWith("/insights") ? "insights" : "memos"} onLogout={logout} />;
+  return <Home user={phase.user} path={path} view={path.startsWith("/insights") ? "insights" : "memos"} onLogout={logout} />;
 }

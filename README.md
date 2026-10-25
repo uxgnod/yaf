@@ -4,7 +4,7 @@
 
 - **运行时**：Cloudflare Workers（Hono 路由）+ Static Assets（React SPA），同一个 Worker 部署
 - **存储**：D1（SQLite），Vectorize（向量）
-- **AI**：Workers AI（`@cf/baai/bge-m3` 向量）；Workflows 做存量补算，Cron 每 15 分钟自动补算
+- **AI**：Workers AI（`@cf/baai/bge-m3` 向量、`qwen3-30b-a3b` 洞察）或 Claude（用户自带 key），经 AI Gateway；Workflows 做补算和洞察生成，Cron 每 15 分钟检查到期计划、补算向量
 - **前端**：React + Vite（`@cloudflare/vite-plugin`，本地开发即在 workerd 中运行）
 - **Markdown**：marked（GFM）+ DOMPurify 净化
 
@@ -19,13 +19,16 @@
 - 亮色 / 暗色 / 跟随系统 三种主题（左上角按钮切换）
 - 侧边栏统计和最近 16 周的热力图
 - API Token（按权限 scope 授权，可撤销、可设过期）、MCP 服务器（`/mcp`）、命令行工具 `yaf`
-- 设置页：账号与安全（修改密码、退出其他设备）、API Token
+- 洞察：按计划（每天 / 每周 / 每月 / 自定义 cron）回顾 memo，生成「反复出现的主题 / 新的连接 / 想做未做 / 值得追问的问题」，每条结论附 memo 引用；可反馈、存为 memo
+- 设置页：账号与安全（修改密码、退出其他设备）、API Token、洞察计划与模型、语义索引
 
 ## 本地开发
 
 ```bash
 npm install
 npm run db:migrate:local   # 初始化本地 D1
+echo "ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .dev.vars
+# AI 和 Vectorize 没有本地模拟，本地开发也会调用线上服务（需要 wrangler login）
 npm run dev                # http://localhost:5173
 ```
 
@@ -40,6 +43,7 @@ npx wrangler vectorize create yaf-memos --dimensions=1024 --metric=cosine
 npx wrangler vectorize create-metadata-index yaf-memos --propertyName=userId --type=string
 npm run db:migrate:remote
 npx wrangler secret put SETUP_TOKEN    # 推荐：防止部署后被他人抢先注册 admin
+openssl rand -base64 32 | npx wrangler secret put ENCRYPTION_KEY   # 加密用户的 Claude API key
 npm run deploy
 ```
 
@@ -53,7 +57,7 @@ npm run deploy
 claude mcp add --transport http yaf https://<你的域名>/mcp --header "Authorization: Bearer <Token>"
 ```
 
-工具：`search_memos`（混合检索）、`get_memo`、`add_memo`、`get_related`、`list_tags`。
+工具：`search_memos`（混合检索）、`get_memo`、`add_memo`、`get_related`、`list_tags`、`list_insights`。
 
 ## CLI
 
@@ -78,6 +82,8 @@ worker/          # API（Hono）
   mcp.ts         # MCP 服务器
   search.ts      # 混合检索、相关笔记、索引状态
   index-workflow.ts # 补算向量的 Workflow
+  insights.ts    # 洞察计划、报告接口、Cron 调度
+  insight-engine.ts / insight-workflow.ts # 洞察生成（取材料、聚类、总结、校验引用）
 shared/segment.ts  # 中文切词（Intl.Segmenter，前后端共用）
 packages/cli/    # yaf 命令行工具
 shared/tags.ts # 标签提取（前后端共用）
@@ -106,6 +112,11 @@ migrations/    # D1 schema
 | GET / POST / DELETE | `/api/tokens[/:id]` | API Token 列表 / 新建（明文只返回一次）/ 撤销（仅网页会话） |
 | POST | `/api/device/code`、`/api/device/token` | CLI 设备码登录：发起 / 轮询 |
 | GET / POST | `/api/device/:userCode` | 网页端查看 / 批准设备登录 |
+| GET / POST / PATCH / DELETE | `/api/insights/plans[/:id]` | 洞察计划 |
+| POST | `/api/insights/plans/:id/run` | 立即生成 |
+| GET | `/api/insights`、`/api/insights/:id` | 报告列表（含未读数）/ 详情 |
+| POST | `/api/insights/:id/feedback`、`/api/insights/:id/save` | 反馈 / 存为 memo |
+| GET / PUT | `/api/settings/ai` | Claude API key 状态 / 设置 |
 | POST | `/mcp` | MCP（Streamable HTTP），需 Bearer Token |
 
 除 Token 管理、修改密码外，`/api/*` 也接受 `Authorization: Bearer yaf_pat_…`，按 scope 校验：`memos:read`、`memos:write`、`export`、`insights:read`。

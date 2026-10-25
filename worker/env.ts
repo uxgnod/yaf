@@ -4,6 +4,11 @@ export interface Env {
   AI: Ai;
   VECTORS: Vectorize;
   INDEX_WORKFLOW: Workflow<{ userId: string }>;
+  INSIGHT_WORKFLOW: Workflow<import("./insight-workflow").InsightParams>;
+  /** AI Gateway id；留空则不经过 Gateway */
+  AI_GATEWAY_ID?: string;
+  /** 32 字节 base64，用于加密用户的 Claude API key（`wrangler secret put ENCRYPTION_KEY`） */
+  ENCRYPTION_KEY?: string;
   /** 若设置（`wrangler secret put SETUP_TOKEN`），首次创建 admin 时需提供该口令，防止部署后被他人抢先注册 */
   SETUP_TOKEN?: string;
 }

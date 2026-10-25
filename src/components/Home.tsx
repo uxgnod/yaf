@@ -7,6 +7,7 @@ import { Sidebar } from "./Sidebar";
 import { ExportDialog } from "./ExportDialog";
 import { useTheme } from "../theme";
 import { navigate } from "../router";
+import { InsightsPage } from "./Insights";
 
 /** 当前标签筛选保存在 URL hash（#tag=xxx），这样 memo 内的标签链接可以直接跳转 */
 function readTagFromHash(): string | null {
@@ -14,7 +15,8 @@ function readTagFromHash(): string | null {
   return m ? decodeURIComponent(m[1]) : null;
 }
 
-export function Home({ user, view, onLogout }: { user: User; view: "memos" | "insights"; onLogout: () => void }) {
+export function Home({ user, path, view, onLogout }: { user: User; path: string; view: "memos" | "insights"; onLogout: () => void }) {
+  const [unreadInsights, setUnreadInsights] = useState(0);
   const [memos, setMemos] = useState<MemoHit[]>([]);
   const [mode, setMode] = useState<SearchMode>("hybrid");
   const [sort, setSort] = useState<SearchSort>("relevance");
@@ -47,6 +49,7 @@ export function Home({ user, view, onLogout }: { user: User; view: "memos" | "in
   const refreshMeta = useCallback(() => {
     api.tags().then((r) => setTags(r.tags));
     api.stats().then(setStats);
+    api.listInsights().then((r) => setUnreadInsights(r.unread), () => {});
   }, []);
 
   const load = useCallback(
@@ -140,25 +143,16 @@ export function Home({ user, view, onLogout }: { user: User; view: "memos" | "in
         tags={tags}
         activeTag={view === "memos" ? tag : undefined}
         view={view}
+        unreadInsights={unreadInsights}
         onSelectTag={selectTag}
         onExport={() => setExporting(true)}
         onLogout={onLogout}
         theme={theme}
         onToggleTheme={toggle}
       />
-      <main className="main">
+      <main className={"main" + (view === "insights" ? " insights-main" : "")}>
         {view === "insights" ? (
-          <>
-            <div className="topbar">
-              <button className="icon-btn menu-toggle" onClick={() => setSidebarOpen(true)} aria-label="菜单">☰</button>
-              <div className="title">洞察</div>
-            </div>
-            <div className="placeholder-card">
-              <div className="placeholder-icon">✦</div>
-              <h3>洞察即将上线</h3>
-              <p className="muted">按你设定的频率回顾笔记，找出反复出现的主题、新的连接和值得追问的问题。</p>
-            </div>
-          </>
+          <InsightsPage path={path} onMenu={() => setSidebarOpen(true)} onUnreadChange={setUnreadInsights} />
         ) : (
           <>
             <div className="topbar">

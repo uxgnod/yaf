@@ -5,11 +5,13 @@ import { memos } from "./memos";
 import { tokens } from "./tokens";
 import { handleMcp } from "./mcp";
 import { backfillAll } from "./search";
+import { insights, runDuePlans } from "./insights";
 
 const app = new Hono<AppEnv>().basePath("/api");
 
 app.route("/auth", auth);
 app.route("/", tokens);
+app.route("/", insights);
 app.route("/", memos);
 
 app.onError((err, c) => {
@@ -24,8 +26,9 @@ export default {
     return app.fetch(request, env, ctx);
   },
   async scheduled(_controller, env, ctx) {
-    ctx.waitUntil(backfillAll(env));
+    ctx.waitUntil(Promise.allSettled([runDuePlans(env), backfillAll(env)]));
   },
 } satisfies ExportedHandler<Env>;
 
 export { IndexWorkflow } from "./index-workflow";
+export { InsightWorkflow } from "./insight-workflow";

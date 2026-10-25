@@ -36,6 +36,67 @@ export interface IndexStatus {
   fusion: string;
 }
 
+export type Cadence = "daily" | "weekly" | "monthly" | "custom";
+export type Perspective = "balanced" | "patterns" | "actions" | "questions";
+
+export interface InsightPlan {
+  id: string;
+  name: string;
+  cadence: Cadence;
+  cron: string;
+  time: string | null;
+  weekday: number | null;
+  monthday: number | null;
+  timezone: string;
+  scopeTags: string[];
+  windowDays: number;
+  perspective: Perspective;
+  extraPrompt: string;
+  model: "workers-ai" | "claude";
+  delivery: string;
+  enabled: boolean;
+  nextRunAt: number | null;
+  lastRunAt: number | null;
+  createdAt: number;
+}
+
+export type PlanInput = Partial<Omit<InsightPlan, "id" | "nextRunAt" | "lastRunAt" | "createdAt" | "delivery">>;
+
+export interface InsightItem {
+  title: string;
+  detail: string;
+  memoIds: string[];
+}
+
+export interface InsightContent {
+  summary: string;
+  themes: InsightItem[];
+  connections: InsightItem[];
+  unfinished: InsightItem[];
+  questions: { question: string; why: string; memoIds: string[] }[];
+  memos: Record<string, { createdAt: number; excerpt: string }>;
+  stats: { window: number; history: number; clusters: number; dropped: number };
+}
+
+export interface Insight {
+  id: string;
+  planId: string | null;
+  planName: string | null;
+  status: "generating" | "ready" | "failed";
+  title: string | null;
+  periodStart: number;
+  periodEnd: number;
+  memoCount: number;
+  model: string | null;
+  error: string | null;
+  feedback: "useful" | "useless" | null;
+  readAt: number | null;
+  savedMemoId: string | null;
+  createdAt: number;
+  completedAt: number | null;
+  content?: InsightContent | null;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -128,6 +189,24 @@ export const api = {
     request<{ clientName: string; scopes: Scope[]; status: string }>(`/device/${encodeURIComponent(code)}`),
   approveDevice: (code: string, approve: boolean) =>
     request(`/device/${encodeURIComponent(code)}`, { method: "POST", body: json({ approve }) }),
+
+  getMemo: (id: string) => request<{ memo: Memo }>(`/memos/${id}`),
+
+  listPlans: () => request<{ plans: InsightPlan[] }>("/insights/plans"),
+  createPlan: (body: PlanInput) => request<{ plan: InsightPlan }>("/insights/plans", { method: "POST", body: json(body) }),
+  updatePlan: (id: string, body: PlanInput) =>
+    request<{ plan: InsightPlan }>(`/insights/plans/${id}`, { method: "PATCH", body: json(body) }),
+  deletePlan: (id: string) => request(`/insights/plans/${id}`, { method: "DELETE" }),
+  runPlan: (id: string) => request<{ id: string; alreadyRunning?: boolean }>(`/insights/plans/${id}/run`, { method: "POST" }),
+  listInsights: () => request<{ insights: Insight[]; unread: number }>("/insights"),
+  getInsight: (id: string) => request<{ insight: Insight }>(`/insights/${id}`),
+  insightFeedback: (id: string, feedback: "useful" | "useless" | null) =>
+    request(`/insights/${id}/feedback`, { method: "POST", body: json({ feedback }) }),
+  saveInsight: (id: string) => request<{ memoId: string }>(`/insights/${id}/save`, { method: "POST" }),
+  deleteInsight: (id: string) => request(`/insights/${id}`, { method: "DELETE" }),
+  aiSettings: () => request<{ hasClaudeKey: boolean; workersAiModel: string; claudeModel: string }>("/settings/ai"),
+  setClaudeKey: (anthropicKey: string | null) =>
+    request<{ hasClaudeKey: boolean }>("/settings/ai", { method: "PUT", body: json({ anthropicKey }) }),
 
   exportUrl: (params: { tag?: string; format: "md" | "json" }) => `/api/export${qs(params)}`,
 };

@@ -104,12 +104,11 @@ Cron（每 15 分钟）→ 查到期的 insight_plans（用 croner 解析 cron �
 | 0 | 微信验证原型（半天）：在 Worker 里跑通扫码、收一条文字、回复一条 | 不确定性最高，先验证 | DO | 待开始 |
 | 1 | 底座 + API Token + MCP + CLI | 工作量最小，做完就能让 agent 读写 memo | — | 已完成（2026-10-25；npm 发布待做） |
 | 2 | 混合检索 + 相关笔记 | 洞察依赖它 | Workers AI、Vectorize | 已完成（2026-10-25） |
-| 3 | 洞察 | 依赖第 2 步 | Workflows、Cron、AI Gateway | 待开始 |
+| 3 | 洞察 | 依赖第 2 步 | Workflows、Cron、AI Gateway | 已完成（2026-10-25） |
 | 4 | 微信正式接入 | 依赖附件、R2 和第 0 步结论 | DO、R2 | 待开始 |
 
 ## 8. 待决定的问题
 
-- 洞察默认用哪个模型：Workers AI（免费）还是 Claude（自带 key）？
 - 网页编辑器是否也支持上传图片？（原型里没画）
 
 ## 9. 决策记录
@@ -130,3 +129,8 @@ Cron（每 15 分钟）→ 查到期的 insight_plans（用 croner 解析 cron �
 - 2026-10-25：「相关笔记」点开时才查询，不在每张卡片渲染时预查数量，避免一屏触发几十次向量查询。
 - 2026-10-25：Vectorize 索引 `yaf-memos`（1024 维 cosine，`userId` 建了 metadata 过滤索引）。Vectorize 没有本地模拟，本地开发也连线上索引，按 userId 隔离。
 - 2026-10-25：编辑 memo 时把 `vector_hash` 置空，再用 `waitUntil` 后台重算；失败的由 Cron（每 15 分钟）自动启动补算 Workflow，不需要手动操作。
+- 2026-10-25：洞察默认模型 Workers AI `@cf/qwen/qwen3-30b-a3b-fp8`。实测：`qwen3.8-27b` 质量更好但长输入 2 分钟超时；`deepseek-v4-flash`、`glm-5.3-flash` 不在免费套餐；`gpt-oss-120b` 结构化输出解析失败；`llama-4-scout` 内容过于简略。Claude 默认 `claude-sonnet-5-5`，key 用 AES-GCM 加密存 D1，密钥是 Worker secret `ENCRYPTION_KEY`。
+- 2026-10-25：交给模型的 memo 用短编号（W1 = 窗口内、H1 = 召回的历史），模型只引用编号；保存前换成真实 id，引用无效的条目整条丢弃；正文里残留的编号用正则去掉，引用以链接形式单独展示。
+- 2026-10-25：窗口内 memo ≤ 24 条时不聚类、直接汇总；更多时用余弦 k-means（k = √(n/2)，2–6）分簇，每簇单独总结后再汇总。分层记忆（周报 → 月报）暂不做。
+- 2026-10-25：计划存 cron + 时区（croner 计算下次时间）；界面上的「每天 / 每周 / 每月」转成 cron，另有自定义 cron。Cron 触发时先用条件更新推进 next_run_at，再启动 Workflow，避免重复生成。「试运行」= 保存并立即生成一份。
+- 2026-10-25：「有用 / 没用」反馈会作为偏好提示带进同一计划的下一次生成；「存为 memo」生成带 `#洞察` 标签的 Markdown memo，并进入检索索引。

@@ -108,6 +108,7 @@ interface Props {
   /** undefined：当前不在笔记列表页，任何标签都不高亮 */
   activeTag: string | null | undefined;
   view: "memos" | "insights";
+  unreadInsights: number;
   onSelectTag: (tag: string | null) => void;
   onExport: () => void;
   onLogout: () => void;
@@ -115,7 +116,7 @@ interface Props {
   onToggleTheme: () => void;
 }
 
-export function Sidebar({ user, stats, tags, activeTag, view, onSelectTag, onExport, onLogout, theme, onToggleTheme }: Props) {
+export function Sidebar({ user, stats, tags, activeTag, view, unreadInsights, onSelectTag, onExport, onLogout, theme, onToggleTheme }: Props) {
   const tree = useMemo(() => buildTree(tags), [tags]);
   return (
     <aside className="sidebar">
@@ -147,6 +148,7 @@ export function Sidebar({ user, stats, tags, activeTag, view, onSelectTag, onExp
         </div>
         <div className={"nav-item" + (view === "insights" ? " active" : "")} onClick={() => navigate("/insights")}>
           <span className="nav-icon">✦</span> 洞察
+          {unreadInsights > 0 && <span className="new-badge">{unreadInsights} 新</span>}
         </div>
         <div className="nav-item" onClick={onExport}>
           <span className="nav-icon">⤓</span> 导出
