@@ -1,6 +1,7 @@
 // memo 的读写逻辑。REST 接口（memos.ts）和 MCP（mcp.ts）共用。
 import { extractTags } from "../shared/tags";
 import type { Source } from "./env";
+import { ftsStatements } from "./search";
 
 export interface MemoRow {
   id: string;
@@ -116,6 +117,7 @@ export async function createMemo(db: D1Database, userId: string, content: unknow
       .prepare("INSERT INTO memos (id, user_id, content, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
       .bind(id, userId, text, source, now, now),
     ...tagStatements(db, id, userId, text),
+    ...ftsStatements(db, id, userId, text),
   ]);
   return { id, content: text, source, createdAt: now, updatedAt: now, tags: extractTags(text).sort() } as Memo;
 }
@@ -129,8 +131,11 @@ export async function updateMemo(db: D1Database, userId: string, id: string, con
   if (!existing) throw new MemoError(404, "不存在");
   const now = Date.now();
   await db.batch([
-    db.prepare("UPDATE memos SET content = ?, updated_at = ? WHERE id = ? AND user_id = ?").bind(text, now, id, userId),
+    db
+      .prepare("UPDATE memos SET content = ?, updated_at = ?, vector_hash = NULL WHERE id = ? AND user_id = ?")
+      .bind(text, now, id, userId),
     ...tagStatements(db, id, userId, text),
+    ...ftsStatements(db, id, userId, text),
   ]);
   return {
     id,
@@ -145,9 +150,10 @@ export async function updateMemo(db: D1Database, userId: string, id: string, con
 export async function deleteMemo(db: D1Database, userId: string, id: string) {
   const res = await db.batch([
     db.prepare("DELETE FROM memo_tags WHERE memo_id = ? AND user_id = ?").bind(id, userId),
+    db.prepare("DELETE FROM memos_fts WHERE memo_id = ? AND user_id = ?").bind(id, userId),
     db.prepare("DELETE FROM memos WHERE id = ? AND user_id = ?").bind(id, userId),
   ]);
-  if (!res[1].meta.changes) throw new MemoError(404, "不存在");
+  if (!res[2].meta.changes) throw new MemoError(404, "不存在");
 }
 
 export async function listTags(db: D1Database, userId: string) {

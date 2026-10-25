@@ -4,6 +4,7 @@ import { auth } from "./auth";
 import { memos } from "./memos";
 import { tokens } from "./tokens";
 import { handleMcp } from "./mcp";
+import { backfillAll } from "./search";
 
 const app = new Hono<AppEnv>().basePath("/api");
 
@@ -22,4 +23,9 @@ export default {
     if (new URL(request.url).pathname === "/mcp") return handleMcp(request, env, ctx);
     return app.fetch(request, env, ctx);
   },
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(backfillAll(env));
+  },
 } satisfies ExportedHandler<Env>;
+
+export { IndexWorkflow } from "./index-workflow";

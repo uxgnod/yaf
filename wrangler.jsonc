@@ -16,5 +16,16 @@
       "database_id": "e8635755-c827-4471-becd-45712f518874",
       "migrations_dir": "migrations"
     }
+  ],
+  // Workers AI：向量（bge-m3）、洞察模型。本地开发也走远程
+  "ai": { "binding": "AI", "remote": true },
+  // 语义检索：1024 维 cosine；metadata.userId 已建过滤索引
+  // 本地开发同样连线上索引（Vectorize 没有本地模拟），按 userId 过滤，互不影响
+  "vectorize": [{ "binding": "VECTORS", "index_name": "yaf-memos", "remote": true }],
+  // 每 15 分钟：补算缺失的向量（第 3 步起还会检查到期的洞察计划）
+  "triggers": { "crons": ["*/15 * * * *"] },
+  "workflows": [
+    // 存量 memo 分批补算向量 / 重建索引
+    { "name": "yaf-index", "binding": "INDEX_WORKFLOW", "class_name": "IndexWorkflow" }
   ]
 }

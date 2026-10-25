@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { Env, Scope, User } from "./env";
 import { findToken } from "./lib/pat";
 import { createMemo, getMemo, listMemos, listTags, MemoError, type Memo } from "./memo-service";
+import { related, scheduleIndex, search } from "./search";
 
 function formatMemo(m: Memo) {
   const time = new Date(m.createdAt).toISOString();
@@ -14,7 +15,7 @@ function formatMemo(m: Memo) {
 const text = (s: string) => ({ content: [{ type: "text" as const, text: s }] });
 const fail = (s: string) => ({ content: [{ type: "text" as const, text: s }], isError: true });
 
-function createServer(env: Env, user: User, scopes: Scope[]) {
+function createServer(env: Env, ctx: ExecutionContext, user: User, scopes: Scope[]) {
   const server = new McpServer({ name: "yaf", version: "2.0.0" });
   const can = (s: Scope) => scopes.includes(s);
   const denied = (s: Scope) => fail(`当前 Token 没有 ${s} 权限`);
@@ -24,15 +25,24 @@ function createServer(env: Env, user: User, scopes: Scope[]) {
     {
       title: "搜索 memo",
       description:
-        "在用户的 yaf 笔记（memo）里按关键词和 / 或标签搜索，按时间倒序返回。query 用空格分隔多个词，需全部命中；tag 不带 #，包含子标签。都不传时返回最新的 memo。",
+        "在用户的 yaf 笔记（memo）里搜索。传 query 时默认混合检索（关键词 + 语义，按相关度排序），能找到意思相近但用词不同的 memo；tag 不带 #，包含子标签。都不传时按时间倒序返回最新的 memo。",
       inputSchema: z.object({
-        query: z.string().optional().describe("关键词，空格分隔"),
+        query: z.string().optional().describe("搜索内容，可以是关键词，也可以是一句话"),
+        mode: z.enum(["hybrid", "keyword", "semantic"]).optional().describe("检索方式，默认 hybrid"),
         tag: z.string().optional().describe("标签，如 读书 或 project/yaf"),
         limit: z.number().int().min(1).max(50).optional().describe("返回条数，默认 20"),
       }),
     },
-    async ({ query, tag, limit }) => {
+    async ({ query, mode, tag, limit }) => {
       if (!can("memos:read")) return denied("memos:read");
+      if (query?.trim()) {
+        const r = await search(env, user.id, { q: query, tag, mode, limit: limit ?? 20 });
+        if (!r.memos.length) return text("没有找到匹配的 memo。");
+        return text(
+          `找到 ${r.memos.length} 条（关键词 ${r.stats.keyword} · 语义 ${r.stats.semantic}）：\n\n` +
+            r.memos.map(formatMemo).join("\n\n---\n\n"),
+        );
+      }
       const r = await listMemos(env.DB, user.id, { q: query, tag, limit: limit ?? 20 });
       if (!r.memos.length) return text("没有找到匹配的 memo。");
       return text(`找到 ${r.memos.length} 条${r.nextCursor ? "（还有更多）" : ""}：\n\n` + r.memos.map(formatMemo).join("\n\n---\n\n"));
@@ -64,11 +74,30 @@ function createServer(env: Env, user: User, scopes: Scope[]) {
       if (!can("memos:write")) return denied("memos:write");
       try {
         const m = await createMemo(env.DB, user.id, content, "mcp");
+        scheduleIndex(env, ctx, user.id, m);
         return text(`已记录 ${m.id}${m.tags.length ? " · " + m.tags.map((t) => "#" + t).join(" ") : ""}`);
       } catch (e) {
         if (e instanceof MemoError) return fail(e.message);
         throw e;
       }
+    },
+  );
+
+  server.registerTool(
+    "get_related",
+    {
+      title: "相关笔记",
+      description: "找出和某条 memo 语义上最相关的其他 memo（基于向量相似度）。",
+      inputSchema: z.object({
+        id: z.string().describe("memo id"),
+        limit: z.number().int().min(1).max(10).optional().describe("返回条数，默认 5"),
+      }),
+    },
+    async ({ id, limit }) => {
+      if (!can("memos:read")) return denied("memos:read");
+      const list = await related(env, user.id, id, limit ?? 5);
+      if (!list.length) return text("没有找到相关的 memo（可能还没有建立语义索引）。");
+      return text(list.map((m) => `相似度 ${m.score}\n${formatMemo(m)}`).join("\n\n---\n\n"));
     },
   );
 
@@ -100,7 +129,7 @@ export async function handleMcp(request: Request, env: Env, ctx: ExecutionContex
         { status: 401, headers: { "WWW-Authenticate": 'Bearer realm="yaf"' } },
       );
     }
-    return createMcpHandler(() => createServer(env, found.user, found.scopes), { route: "/mcp" })(request, env, ctx);
+    return createMcpHandler(() => createServer(env, ctx, found.user, found.scopes), { route: "/mcp" })(request, env, ctx);
   }
   return createMcpHandler(() => new McpServer({ name: "yaf", version: "2.0.0" }), { route: "/mcp" })(request, env, ctx);
 }

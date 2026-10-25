@@ -14,6 +14,7 @@ import {
   updateMemo,
   type MemoRow,
 } from "./memo-service";
+import { indexStatus, related, scheduleIndex, scheduleRemove, search, startIndexJob, type SearchMode } from "./search";
 
 /** 网页会话记为 web；Token 调用可用 X-Yaf-Source 标明 cli，否则记为 api */
 function sourceOf(c: Context<AppEnv>): Source {
@@ -28,8 +29,22 @@ memos.onError((err, c) => {
   throw err;
 });
 
+const MODES: SearchMode[] = ["hybrid", "keyword", "semantic"];
+
 memos.get("/memos", requireScope("memos:read"), async (c) => {
-  const { q, tag, cursor } = c.req.query();
+  const { q, tag, cursor, mode, sort } = c.req.query();
+  // 有搜索词时走混合检索（mode 默认 hybrid）；legacy 模式保留原来的子串匹配 + 时间分页
+  if (q?.trim() && mode !== "legacy") {
+    return c.json(
+      await search(c.env, c.get("user").id, {
+        q,
+        tag,
+        mode: MODES.includes(mode as SearchMode) ? (mode as SearchMode) : "hybrid",
+        sort: sort === "time" ? "time" : "relevance",
+        limit: Number(c.req.query("limit")) || 50,
+      }),
+    );
+  }
   return c.json(await listMemos(c.env.DB, c.get("user").id, { q, tag, cursor, limit: Number(c.req.query("limit")) }));
 });
 
@@ -39,19 +54,40 @@ memos.get("/memos/:id", requireScope("memos:read"), async (c) => {
   return c.json({ memo });
 });
 
+memos.get("/memos/:id/related", requireScope("memos:read"), async (c) => {
+  const limit = Math.min(Number(c.req.query("limit")) || 3, 10);
+  return c.json({ memos: await related(c.env, c.get("user").id, c.req.param("id"), limit) });
+});
+
 memos.post("/memos", requireScope("memos:write"), async (c) => {
   const { content } = await c.req.json<{ content?: string }>();
-  return c.json({ memo: await createMemo(c.env.DB, c.get("user").id, content, sourceOf(c)) }, 201);
+  const user = c.get("user");
+  const memo = await createMemo(c.env.DB, user.id, content, sourceOf(c));
+  scheduleIndex(c.env, c.executionCtx, user.id, memo);
+  return c.json({ memo }, 201);
 });
 
 memos.patch("/memos/:id", requireScope("memos:write"), async (c) => {
   const { content } = await c.req.json<{ content?: string }>();
-  return c.json({ memo: await updateMemo(c.env.DB, c.get("user").id, c.req.param("id"), content) });
+  const user = c.get("user");
+  const memo = await updateMemo(c.env.DB, user.id, c.req.param("id"), content);
+  scheduleIndex(c.env, c.executionCtx, user.id, memo);
+  return c.json({ memo });
 });
 
 memos.delete("/memos/:id", requireScope("memos:write"), async (c) => {
   await deleteMemo(c.env.DB, c.get("user").id, c.req.param("id"));
+  scheduleRemove(c.env, c.executionCtx, c.req.param("id"));
   return c.json({ ok: true });
+});
+
+/** 语义索引状态：已索引 / 总数、补算任务是否在跑 */
+memos.get("/search/status", requireScope("memos:read"), async (c) => c.json(await indexStatus(c.env, c.get("user").id)));
+
+/** 补算缺失的向量；full = true 时重建全部 */
+memos.post("/search/reindex", requireScope("memos:write"), async (c) => {
+  const { full } = await c.req.json<{ full?: boolean }>().catch(() => ({ full: false }));
+  return c.json(await startIndexJob(c.env, c.get("user").id, Boolean(full)));
 });
 
 memos.get("/tags", requireScope("memos:read"), async (c) => c.json({ tags: await listTags(c.env.DB, c.get("user").id) }));

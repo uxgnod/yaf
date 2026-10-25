@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Memo, type Stats, type TagCount, type User } from "../api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api, type MemoHit, type SearchMode, type SearchSort, type SearchStats, type Stats, type TagCount, type User } from "../api";
+import { queryTerms } from "../../shared/segment";
 import { Editor } from "./Editor";
 import { MemoCard } from "./MemoCard";
 import { Sidebar } from "./Sidebar";
@@ -14,7 +15,11 @@ function readTagFromHash(): string | null {
 }
 
 export function Home({ user, view, onLogout }: { user: User; view: "memos" | "insights"; onLogout: () => void }) {
-  const [memos, setMemos] = useState<Memo[]>([]);
+  const [memos, setMemos] = useState<MemoHit[]>([]);
+  const [mode, setMode] = useState<SearchMode>("hybrid");
+  const [sort, setSort] = useState<SearchSort>("relevance");
+  const [searchStats, setSearchStats] = useState<SearchStats | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [tag, setTag] = useState<string | null>(readTagFromHash);
@@ -49,16 +54,37 @@ export function Home({ user, view, onLogout }: { user: User; view: "memos" | "in
       const id = ++reqId.current;
       setLoading(true);
       try {
-        const r = await api.listMemos({ q: debounced, tag: tag ?? undefined, cursor: reset ? null : from });
+        const r = await api.listMemos({
+          q: debounced,
+          tag: tag ?? undefined,
+          cursor: reset ? null : from,
+          ...(debounced ? { mode, sort } : {}),
+        });
         if (id !== reqId.current) return;
         setMemos((prev) => (reset ? r.memos : [...prev, ...r.memos]));
         setCursor(r.nextCursor);
+        setSearchStats(r.stats ?? null);
       } finally {
         if (id === reqId.current) setLoading(false);
       }
     },
-    [debounced, tag],
+    [debounced, tag, mode, sort],
   );
+
+  // ⌘K / Ctrl+K 聚焦搜索框
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      }
+    };
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  }, []);
+
+  const terms = useMemo(() => (debounced ? [...queryTerms(debounced), ...debounced.split(/\s+/)] : []), [debounced]);
 
   useEffect(() => {
     load(true, null);
@@ -150,16 +176,53 @@ export function Home({ user, view, onLogout }: { user: User; view: "memos" | "in
               </div>
               <div className="search">
                 <span className="search-icon">⌕</span>
-                <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索 memo…" />
-                {query && <button className="chip-clear" onClick={() => setQuery("")}>×</button>}
+                <input
+                  ref={searchRef}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Escape" && (setQuery(""), e.currentTarget.blur())}
+                  placeholder="搜索 memo…"
+                />
+                {query ? <button className="chip-clear" onClick={() => setQuery("")}>×</button> : <kbd className="kbd">⌘K</kbd>}
               </div>
             </div>
+
+            {query.trim() && (
+              <div className="search-bar">
+                <div className="segmented segmented-sm">
+                  {(
+                    [
+                      ["hybrid", "混合"],
+                      ["keyword", "关键词"],
+                      ["semantic", "语义"],
+                    ] as const
+                  ).map(([m, label]) => (
+                    <button key={m} className={mode === m ? "on" : ""} onClick={() => setMode(m)}>{label}</button>
+                  ))}
+                </div>
+                <div className="search-summary muted small">
+                  {searchStats && debounced ? (
+                    <>
+                      找到 {searchStats.total} 条
+                      {mode !== "semantic" && <> · 关键词 {searchStats.keyword}</>}
+                      {mode !== "keyword" && <> · 语义 {searchStats.semantic}</>}
+                    </>
+                  ) : (
+                    "搜索中…"
+                  )}
+                </div>
+                <div className="sort-toggle">
+                  <button className={sort === "relevance" ? "on" : ""} onClick={() => setSort("relevance")}>相关度</button>
+                  <button className={sort === "time" ? "on" : ""} onClick={() => setSort("time")}>时间</button>
+                </div>
+              </div>
+            )}
 
             <Editor key={tag ?? ""} initial={tag ? `#${tag} ` : ""} onSubmit={create} />
 
             <div className="memo-list">
               {memos.map((m) => (
-                <MemoCard key={m.id} memo={m} onUpdate={update} onDelete={remove} />
+                <MemoCard key={m.id} memo={m} terms={terms} onUpdate={update} onDelete={remove} />
               ))}
               {!loading && memos.length === 0 && (
                 <div className="empty muted">{debounced || tag ? "没有匹配的 memo" : "还没有 memo，写下第一条吧"}</div>

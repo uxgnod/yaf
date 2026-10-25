@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { api, type ApiToken, type Scope, type User } from "../api";
+import { api, type ApiToken, type IndexStatus, type Scope, type User } from "../api";
 import { navigate } from "../router";
 import { useTheme } from "../theme";
 
@@ -79,9 +79,7 @@ export function Settings({ user, path }: { user: User; path: string }) {
         {current.path === "/settings/wechat" && (
           <Placeholder title="微信连接即将上线" text="绑定微信 ClawBot 后，在微信里发的文字、图片、语音会自动存为 memo。" />
         )}
-        {current.path === "/settings/insights" && (
-          <Placeholder title="洞察与搜索即将上线" text="这里将管理洞察计划和语义搜索索引。" />
-        )}
+        {current.path === "/settings/insights" && <InsightsSearchSection />}
       </main>
     </div>
   );
@@ -309,7 +307,7 @@ function TokensSection() {
 
       <Card title="MCP 接入" desc="在 Claude Code 等支持 MCP 的工具里搜索和新增 memo。先新建一个 Token，然后执行：">
         <CodeLine code={`claude mcp add --transport http yaf ${origin}/mcp --header "Authorization: Bearer <你的 Token>"`} />
-        <p className="muted small">可用工具：search_memos、get_memo、add_memo、list_tags。</p>
+        <p className="muted small">可用工具：search_memos、get_memo、add_memo、get_related、list_tags。</p>
       </Card>
 
       <Card title="CLI" desc="在终端里记录和搜索。登录时会打开浏览器确认，无需手动复制 Token。">
@@ -395,3 +393,107 @@ function CreateTokenDialog({ onClose, onCreated }: { onClose: () => void; onCrea
     </div>
   );
 }
+
+// ---------- 洞察与搜索 ----------
+
+function InsightsSearchSection() {
+  return (
+    <div className="settings-stack">
+      <SearchIndexCard />
+    </div>
+  );
+}
+
+function SearchIndexCard() {
+  const [status, setStatus] = useState<IndexStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = () =>
+    api
+      .searchStatus()
+      .then(setStatus)
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  // 任务运行中每 2 秒刷新一次进度
+  useEffect(() => {
+    if (!status?.running) return;
+    const t = setInterval(load, 2000);
+    return () => clearInterval(t);
+  }, [status?.running]);
+
+  async function start(full: boolean) {
+    if (full && !window.confirm("重建会重新计算全部 memo 的向量，期间语义搜索结果可能不完整。继续？")) return;
+    setError(null);
+    try {
+      setStatus(await api.reindex(full));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  const pct = status && status.total ? Math.round((status.indexed / status.total) * 100) : 100;
+  const synced = status && status.indexed >= status.total;
+
+  return (
+    <Card
+      title="语义搜索索引"
+      desc="每条 memo 会生成一个向量，用于语义搜索和相关笔记。新写入的 memo 会在后台自动建立索引。"
+      actions={
+        <div className="card-actions">
+          {status && !synced && !status.running && (
+            <button className="btn btn-ghost btn-sm" onClick={() => start(false)}>补全索引</button>
+          )}
+          <button className="btn btn-ghost btn-sm" disabled={!status || status.running} onClick={() => start(true)}>
+            重建索引
+          </button>
+        </div>
+      }
+    >
+      {status ? (
+        <>
+          <div className="index-status">
+            <span className={"dot " + (status.running ? "dot-busy" : synced ? "dot-ok" : "dot-warn")} />
+            {status.running ? "正在建立索引…" : synced ? "已同步" : "有未索引的 memo"}
+            <span className="muted">
+              {status.indexed} / {status.total}
+            </span>
+          </div>
+          <div className="progress">
+            <div className="progress-bar" style={{ width: `${pct}%` }} />
+          </div>
+          <div className="kv">
+            <span className="muted">向量模型</span>
+            <span className="mono small">{status.model}</span>
+            <span className="muted">融合方式</span>
+            <span>RRF（按关键词和语义两路结果的名次融合）</span>
+            {status.jobStartedAt && (
+              <>
+                <span className="muted">上次任务</span>
+                <span>
+                  {formatDate(status.jobStartedAt)} · {JOB_STATUS[status.jobStatus ?? ""] ?? status.jobStatus}
+                </span>
+              </>
+            )}
+          </div>
+        </>
+      ) : (
+        !error && <div className="muted small">加载中…</div>
+      )}
+      {error && <div className="form-error">{error}</div>}
+    </Card>
+  );
+}
+
+const JOB_STATUS: Record<string, string> = {
+  queued: "排队中",
+  running: "进行中",
+  waiting: "等待中",
+  complete: "已完成",
+  errored: "失败",
+  terminated: "已终止",
+  unknown: "未知",
+};

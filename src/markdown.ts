@@ -41,10 +41,40 @@ function linkifyTags(root: HTMLElement) {
   }
 }
 
-export function renderMarkdown(src: string): string {
+/** 把命中的搜索词包成 <mark>（跳过代码块） */
+function highlight(root: HTMLElement, terms: string[]) {
+  const words = [...new Set(terms.map((t) => t.trim()).filter(Boolean))].sort((a, b) => b.length - a.length);
+  if (!words.length) return;
+  const re = new RegExp(words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "gi");
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) => (node.parentElement?.closest("code, pre") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+  });
+  const nodes: Text[] = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode as Text);
+  for (const node of nodes) {
+    const text = node.nodeValue!;
+    re.lastIndex = 0;
+    if (!re.test(text)) continue;
+    re.lastIndex = 0;
+    const frag = document.createDocumentFragment();
+    let last = 0;
+    for (const m of text.matchAll(re)) {
+      frag.append(text.slice(last, m.index));
+      const mark = document.createElement("mark");
+      mark.textContent = m[0];
+      frag.append(mark);
+      last = m.index! + m[0].length;
+    }
+    frag.append(text.slice(last));
+    node.replaceWith(frag);
+  }
+}
+
+export function renderMarkdown(src: string, terms: string[] = []): string {
   const html = marked.parse(src, { async: false }) as string;
   const clean = DOMPurify.sanitize(html, { RETURN_DOM: true }) as HTMLElement;
   linkifyTags(clean);
+  highlight(clean, terms);
   clean.querySelectorAll("a[href]:not(.tag)").forEach((a) => {
     a.setAttribute("target", "_blank");
     a.setAttribute("rel", "noopener noreferrer");

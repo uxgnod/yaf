@@ -8,6 +8,34 @@ export interface Memo {
   source: string;
 }
 
+export type SearchMode = "hybrid" | "keyword" | "semantic";
+export type SearchSort = "relevance" | "time";
+
+export interface SearchMatch {
+  keywordRank?: number;
+  semanticScore?: number;
+}
+
+export interface MemoHit extends Memo {
+  match?: SearchMatch;
+}
+
+export interface SearchStats {
+  total: number;
+  keyword: number;
+  semantic: number;
+}
+
+export interface IndexStatus {
+  total: number;
+  indexed: number;
+  running: boolean;
+  jobStatus: string | null;
+  jobStartedAt: number | null;
+  model: string;
+  fusion: string;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -75,8 +103,11 @@ export const api = {
     request("/auth/login", { method: "POST", body: json({ email, password }) }),
   logout: () => request("/auth/logout", { method: "POST" }),
 
-  listMemos: (params: { q?: string; tag?: string; cursor?: string | null }) =>
-    request<{ memos: Memo[]; nextCursor: string | null }>(`/memos${qs(params)}`),
+  listMemos: (params: { q?: string; tag?: string; cursor?: string | null; mode?: SearchMode; sort?: SearchSort }) =>
+    request<{ memos: MemoHit[]; nextCursor: string | null; stats?: SearchStats }>(`/memos${qs(params)}`),
+  related: (id: string) => request<{ memos: (Memo & { score: number })[] }>(`/memos/${id}/related`),
+  searchStatus: () => request<IndexStatus>("/search/status"),
+  reindex: (full: boolean) => request<IndexStatus>("/search/reindex", { method: "POST", body: json({ full }) }),
   createMemo: (content: string) => request<{ memo: Memo }>("/memos", { method: "POST", body: json({ content }) }),
   updateMemo: (id: string, content: string) =>
     request<{ memo: Memo }>(`/memos/${id}`, { method: "PATCH", body: json({ content }) }),

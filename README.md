@@ -3,7 +3,8 @@
 一个跑在 Cloudflare 免费额度上的 flomo 复刻。
 
 - **运行时**：Cloudflare Workers（Hono 路由）+ Static Assets（React SPA），同一个 Worker 部署
-- **存储**：D1（SQLite）
+- **存储**：D1（SQLite），Vectorize（向量）
+- **AI**：Workers AI（`@cf/baai/bge-m3` 向量）；Workflows 做存量补算，Cron 每 15 分钟自动补算
 - **前端**：React + Vite（`@cloudflare/vite-plugin`，本地开发即在 workerd 中运行）
 - **Markdown**：marked（GFM）+ DOMPurify 净化
 
@@ -11,7 +12,8 @@
 
 - 写 / 编辑 / 删除 memo，支持 Markdown（标题、列表、任务列表、引用、代码、表格、链接…）
 - 自动从内容中提取 `#标签`，支持层级 `#a/b/c`；代码块和行内代码中的 `#` 不算标签；`# 标题` 不算标签
-- 按标签筛选（父标签包含所有子标签），关键词搜索（空格分隔，多个词需全部命中）
+- 按标签筛选（父标签包含所有子标签）
+- 混合检索：关键词（D1 FTS5 + 中文切词）+ 语义（Workers AI `bge-m3` + Vectorize），RRF 融合；命中标记、关键词高亮、⌘K；每条 memo 可查看「相关笔记」
 - 邮箱 + 密码登录；首次启动没有用户时进入「创建管理员」页面
 - 导出 Markdown / JSON，可按标签导出（便于交给 AI 分析）
 - 亮色 / 暗色 / 跟随系统 三种主题（左上角按钮切换）
@@ -34,6 +36,8 @@ npm run dev                # http://localhost:5173
 ```bash
 npx wrangler login
 npx wrangler d1 create yaf-db          # 把返回的 database_id 填到 wrangler.jsonc
+npx wrangler vectorize create yaf-memos --dimensions=1024 --metric=cosine
+npx wrangler vectorize create-metadata-index yaf-memos --propertyName=userId --type=string
 npm run db:migrate:remote
 npx wrangler secret put SETUP_TOKEN    # 推荐：防止部署后被他人抢先注册 admin
 npm run deploy
@@ -49,7 +53,7 @@ npm run deploy
 claude mcp add --transport http yaf https://<你的域名>/mcp --header "Authorization: Bearer <Token>"
 ```
 
-工具：`search_memos`、`get_memo`、`add_memo`、`list_tags`。
+工具：`search_memos`（混合检索）、`get_memo`、`add_memo`、`get_related`、`list_tags`。
 
 ## CLI
 
@@ -72,6 +76,9 @@ worker/          # API（Hono）
   memo-service.ts# memo 读写逻辑（REST 和 MCP 共用）
   tokens.ts      # API Token 管理、设备码登录
   mcp.ts         # MCP 服务器
+  search.ts      # 混合检索、相关笔记、索引状态
+  index-workflow.ts # 补算向量的 Workflow
+shared/segment.ts  # 中文切词（Intl.Segmenter，前后端共用）
 packages/cli/    # yaf 命令行工具
 shared/tags.ts # 标签提取（前后端共用）
 src/           # React 前端
@@ -86,7 +93,9 @@ migrations/    # D1 schema
 | POST | `/api/auth/setup` | 创建 admin（仅在没有用户时可用） |
 | POST | `/api/auth/login` / `/api/auth/logout` | 登录 / 登出 |
 | GET | `/api/auth/me` | 当前用户 |
-| GET | `/api/memos?q=&tag=&cursor=` | 列表 / 搜索 / 按标签筛选，游标分页 |
+| GET | `/api/memos?q=&tag=&cursor=&mode=&sort=` | 列表 / 按标签筛选（游标分页）；有 `q` 时为混合检索，`mode=hybrid\|keyword\|semantic`，`sort=relevance\|time`，返回 `match` 和 `stats` |
+| GET | `/api/memos/:id/related` | 相关笔记 |
+| GET / POST | `/api/search/status`、`/api/search/reindex` | 语义索引状态 / 补算（`{full:true}` 重建） |
 | POST / PATCH / DELETE | `/api/memos[/:id]` | 增 / 改 / 删 |
 | GET | `/api/tags` | 标签及计数 |
 | GET | `/api/stats?tz=` | 统计与热力图 |
