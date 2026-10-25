@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, type Memo, type MemoHit } from "../api";
+import { api, type Attachment, type Memo, type MemoHit } from "../api";
 import { renderMarkdown } from "../markdown";
 import { Editor } from "./Editor";
 
@@ -100,6 +100,7 @@ export function MemoCard({ memo, terms = [], onUpdate, onDelete }: Props) {
         </div>
       </header>
       <div className="markdown" dangerouslySetInnerHTML={{ __html: html }} onDoubleClick={() => setEditing(true)} />
+      {memo.attachments && memo.attachments.length > 0 && <Attachments list={memo.attachments} />}
       <Related memoId={memo.id} />
     </article>
   );
@@ -146,6 +147,61 @@ function Related({ memoId }: { memoId: string }) {
               </div>
             ))
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function duration(ms: number | null) {
+  if (!ms) return "";
+  const s = Math.round(ms / 1000);
+  return s >= 60 ? `${Math.floor(s / 60)}′${String(s % 60).padStart(2, "0")}″` : `${s}″`;
+}
+
+function Attachments({ list }: { list: Attachment[] }) {
+  const [zoom, setZoom] = useState<string | null>(null);
+  const images = list.filter((a) => a.kind === "image");
+  const voices = list.filter((a) => a.kind === "voice");
+  return (
+    <div className="attachments">
+      {images.length > 0 && (
+        <div className="att-images">
+          {images.map((a) =>
+            a.hasFile ? (
+              <button key={a.id} className="att-thumb" onClick={() => setZoom(a.id)} title={a.description ?? "图片"}>
+                <img src={api.attachmentUrl(a.id)} alt={a.description ?? "图片"} loading="lazy" />
+              </button>
+            ) : (
+              <div key={a.id} className="att-image-missing muted small">🖼 {a.description ?? "图片（未保存原图）"}</div>
+            ),
+          )}
+        </div>
+      )}
+      {images.some((a) => a.hasFile && a.description) && (
+        <div className="att-desc muted small">图片内容：{images.map((a) => a.description).filter(Boolean).join("；")}</div>
+      )}
+      {voices.map((a) => (
+        <div key={a.id} className="att-voice">
+          <span className="att-voice-icon">🎙</span>
+          {a.playable ? (
+            <audio controls preload="none" src={api.attachmentUrl(a.id, true)} />
+          ) : (
+            <span className="att-voice-bar">
+              <span className="att-voice-wave" />
+              <span className="muted small">{duration(a.durationMs) || "语音"}</span>
+            </span>
+          )}
+          {!a.playable && (
+            <span className="muted small" title="微信语音是 SILK 格式，浏览器暂不能直接播放">
+              {a.hasFile ? "原音频已保存" : "未保存原音频"}
+            </span>
+          )}
+        </div>
+      ))}
+      {zoom && (
+        <div className="lightbox" onClick={() => setZoom(null)}>
+          <img src={api.attachmentUrl(zoom)} alt="" />
         </div>
       )}
     </div>

@@ -74,7 +74,7 @@ Cron（每 15 分钟）→ 查到期的 insight_plans（用 croner 解析 cron �
 | 项 | 内容 |
 |---|---|
 | 接口地址 | `https://ilinkai.weixin.qq.com`，JSON over HTTPS |
-| 请求头 | `iLink-App-Id: bot`、`iLink-App-ClientVersion`（uint32：major<<16 \| minor<<8 \| patch）、`AuthorizationType: ilink_bot_token`、`Authorization: Bearer <bot_token>`、`X-WECHAT-UIN`（随机 uint32 转十进制字符串再 base64） |
+| 请求头 | `iLink-App-Id: bot`（来自插件 package.json 的 `ilink_appid`）、`iLink-App-ClientVersion`（uint32：major<<16 \| minor<<8 \| patch）、`AuthorizationType: ilink_bot_token`、`Authorization: Bearer <bot_token>`、`X-WECHAT-UIN`（随机 uint32 转十进制字符串再 base64） |
 | 扫码 | `GET ilink/bot/get_bot_qrcode?bot_type=…` 返回 `qrcode` 和 `qrcode_img_content`；长轮询 `GET ilink/bot/get_qrcode_status?qrcode=…`，状态有 `wait` / `scaned` / `need_verifycode` / `verify_code_blocked` / `expired` / `scaned_but_redirect`（带 `redirect_host`）/ `binded_redirect` / `confirmed`（返回 `bot_token`、`ilink_bot_id`、`baseurl`） |
 | 收消息 | **只能长轮询，没有 webhook**：`POST ilink/bot/getupdates`，body 为 `{get_updates_buf, base_info}`，客户端超时约 35 秒 |
 | 其他接口 | `sendmessage`（需带 `context_token`，只能在 24 小时内回复）、`sendtyping`、`getuploadurl`、`getconfig`、`msg/notifystart`、`msg/notifystop` |
@@ -101,11 +101,11 @@ Cron（每 15 分钟）→ 查到期的 insight_plans（用 croner 解析 cron �
 
 | 步骤 | 内容 | 理由 | 新增的 CF 组件 | 状态 |
 |---|---|---|---|---|
-| 0 | 微信验证原型（半天）：在 Worker 里跑通扫码、收一条文字、回复一条 | 不确定性最高，先验证 | DO | 待开始 |
+| 0 | 微信验证原型（半天）：在 Worker 里跑通扫码、收一条文字、回复一条 | 不确定性最高，先验证 | DO | 代码完成，待扫码实测 |
 | 1 | 底座 + API Token + MCP + CLI | 工作量最小，做完就能让 agent 读写 memo | — | 已完成（2026-10-25；npm 发布待做） |
 | 2 | 混合检索 + 相关笔记 | 洞察依赖它 | Workers AI、Vectorize | 已完成（2026-10-25） |
 | 3 | 洞察 | 依赖第 2 步 | Workflows、Cron、AI Gateway | 已完成（2026-10-25） |
-| 4 | 微信正式接入 | 依赖附件、R2 和第 0 步结论 | DO、R2 | 待开始 |
+| 4 | 微信正式接入 | 依赖附件、R2 和第 0 步结论 | DO、R2 | 代码完成并部署，待实测；R2 待开通 |
 
 ## 8. 待决定的问题
 
@@ -134,3 +134,8 @@ Cron（每 15 分钟）→ 查到期的 insight_plans（用 croner 解析 cron �
 - 2026-10-25：窗口内 memo ≤ 24 条时不聚类、直接汇总；更多时用余弦 k-means（k = √(n/2)，2–6）分簇，每簇单独总结后再汇总。分层记忆（周报 → 月报）暂不做。
 - 2026-10-25：计划存 cron + 时区（croner 计算下次时间）；界面上的「每天 / 每周 / 每月」转成 cron，另有自定义 cron。Cron 触发时先用条件更新推进 next_run_at，再启动 Workflow，避免重复生成。「试运行」= 保存并立即生成一份。
 - 2026-10-25：「有用 / 没用」反馈会作为偏好提示带进同一计划的下一次生成；「存为 memo」生成带 `#洞察` 标签的 Markdown memo，并进入检索索引。
+- 2026-10-25：第 0 步和第 4 步合并实现（用户要求微信放最后、尽量少打扰）。协议细节补充：`get_bot_qrcode` 是 POST（body `{local_token_list: []}`，`bot_type=3`）；`qrcode_img_content` 是要编码成二维码的链接（`liteapp.weixin.qq.com/q/...`），前端用 `qrcode` 库渲染；`getupdates` 的 `ret/errcode = -14` 表示 bot_token 失效；图片 `image_item.aeskey`（hex）优先于 `media.aes_key`。
+- 2026-10-25：只收录扫码者本人（`ilink_user_id`）发来的消息；按 `message_id` 在 DO 的 SQLite 里去重（保留最近 2000 条）；游标存在 DO storage。
+- 2026-10-25：R2 未开通（账户需在控制台启用），代码里 `MEDIA` 绑定是可选的：未开通时图片只保存 AI 描述，语音只保存微信转写。开通后创建 `yaf-media` bucket、取消 wrangler.jsonc 里的注释即可。
+- 2026-10-25：语音回放暂不做：`silk-wasm` 是 Emscripten 构建，运行时用 fs / fetch 读取 .wasm，不能直接在 Workers 上运行；要支持需自己用 `instantiateWasm` 包一层，或在浏览器端解码。是否需要取决于实测 `voice_item.text` 是否总有值。
+- 2026-10-25：图片描述模型 `@cf/mistralai/mistral-small-3.1-24b-instruct`（免费套餐可用，约 5 秒一张）。

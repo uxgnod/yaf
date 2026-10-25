@@ -66,7 +66,16 @@ interface IndexRow {
 /** 给一批 memo 算向量、写 Vectorize，并同步 FTS；成功后记下 vector_hash */
 export async function indexMemos(env: Env, rows: IndexRow[]) {
   if (!rows.length) return;
-  const texts = rows.map((r) => embedText(r.content));
+  // 图片描述 / 语音转写也参与检索
+  const { results: atts } = await env.DB.prepare(
+    `SELECT memo_id, description FROM attachments
+      WHERE description IS NOT NULL AND memo_id IN (${rows.map(() => "?").join(",")})`,
+  )
+    .bind(...rows.map((r) => r.id))
+    .all<{ memo_id: string; description: string }>();
+  const extra = new Map<string, string>();
+  for (const a of atts) extra.set(a.memo_id, `${extra.get(a.memo_id) ?? ""}\n${a.description}`);
+  const texts = rows.map((r) => embedText(r.content + (extra.get(r.id) ?? "")));
   const vectors = await embed(env, texts);
   await env.VECTORS.upsert(
     rows.map((r, i) => ({ id: r.id, values: vectors[i], metadata: { userId: r.user_id, createdAt: r.created_at } })),
@@ -74,7 +83,7 @@ export async function indexMemos(env: Env, rows: IndexRow[]) {
   const hashes = await Promise.all(texts.map((t) => sha256(t)));
   await env.DB.batch(
     rows.flatMap((r, i) => [
-      ...ftsStatements(env.DB, r.id, r.user_id, r.content),
+      ...ftsStatements(env.DB, r.id, r.user_id, r.content + (extra.get(r.id) ?? "")),
       // 只有内容没被再次修改时才标记为已索引
       env.DB.prepare("UPDATE memos SET vector_hash = ? WHERE id = ? AND content = ?").bind(hashes[i], r.id, r.content),
     ]),

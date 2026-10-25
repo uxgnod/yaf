@@ -76,8 +76,9 @@ memos.patch("/memos/:id", requireScope("memos:write"), async (c) => {
 });
 
 memos.delete("/memos/:id", requireScope("memos:write"), async (c) => {
-  await deleteMemo(c.env.DB, c.get("user").id, c.req.param("id"));
+  const files = await deleteMemo(c.env.DB, c.get("user").id, c.req.param("id"));
   scheduleRemove(c.env, c.executionCtx, c.req.param("id"));
+  if (files.length && c.env.MEDIA) c.executionCtx.waitUntil(c.env.MEDIA.delete(files));
   return c.json({ ok: true });
 });
 

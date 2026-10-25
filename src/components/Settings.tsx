@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, type ApiToken, type Cadence, type IndexStatus, type InsightPlan, type Perspective, type PlanInput, type Scope, type TagCount, type User } from "../api";
 import { describeSchedule } from "./Insights";
+import { WechatSection } from "./Wechat";
 import { navigate } from "../router";
 import { useTheme } from "../theme";
 
@@ -77,21 +78,9 @@ export function Settings({ user, path }: { user: User; path: string }) {
         </div>
         {current.path === "/settings/account" && <AccountSection user={user} />}
         {current.path === "/settings/tokens" && <TokensSection />}
-        {current.path === "/settings/wechat" && (
-          <Placeholder title="微信连接即将上线" text="绑定微信 ClawBot 后，在微信里发的文字、图片、语音会自动存为 memo。" />
-        )}
+        {current.path === "/settings/wechat" && <WechatSection />}
         {current.path === "/settings/insights" && <InsightsSearchSection />}
       </main>
-    </div>
-  );
-}
-
-function Placeholder({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="placeholder-card">
-      <div className="placeholder-icon">◌</div>
-      <h3>{title}</h3>
-      <p className="muted">{text}</p>
     </div>
   );
 }

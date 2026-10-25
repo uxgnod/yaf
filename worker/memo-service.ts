@@ -10,6 +10,17 @@ export interface MemoRow {
   created_at: number;
   updated_at: number;
   tags: string | null;
+  attachments?: string | null;
+}
+
+export interface Attachment {
+  id: string;
+  kind: "image" | "voice";
+  mime: string | null;
+  durationMs: number | null;
+  description: string | null;
+  hasFile: boolean;
+  playable: boolean;
 }
 
 export type Memo = ReturnType<typeof toMemo>;
@@ -28,6 +39,7 @@ export function toMemo(r: MemoRow) {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     tags: r.tags ? r.tags.split("\u001f").sort() : [],
+    attachments: r.attachments ? (JSON.parse(r.attachments) as Attachment[]) : [],
   };
 }
 
@@ -50,7 +62,11 @@ export function buildFilter(userId: string, q?: string, tag?: string) {
 }
 
 export const SELECT_MEMO = `SELECT m.id, m.content, m.source, m.created_at, m.updated_at,
-  (SELECT group_concat(tag, char(31)) FROM memo_tags WHERE memo_id = m.id) AS tags
+  (SELECT group_concat(tag, char(31)) FROM memo_tags WHERE memo_id = m.id) AS tags,
+  (SELECT json_group_array(json_object('id', a.id, 'kind', a.kind, 'mime', a.mime, 'durationMs', a.duration_ms,
+      'description', a.description, 'hasFile', json(CASE WHEN a.r2_key IS NULL THEN 'false' ELSE 'true' END),
+      'playable', json(CASE WHEN a.playback_key IS NULL THEN 'false' ELSE 'true' END)))
+     FROM attachments a WHERE a.memo_id = m.id) AS attachments
   FROM memos m`;
 
 function tagStatements(db: D1Database, memoId: string, userId: string, content: string) {
@@ -119,7 +135,7 @@ export async function createMemo(db: D1Database, userId: string, content: unknow
     ...tagStatements(db, id, userId, text),
     ...ftsStatements(db, id, userId, text),
   ]);
-  return { id, content: text, source, createdAt: now, updatedAt: now, tags: extractTags(text).sort() } as Memo;
+  return { id, content: text, source, createdAt: now, updatedAt: now, tags: extractTags(text).sort(), attachments: [] } as Memo;
 }
 
 export async function updateMemo(db: D1Database, userId: string, id: string, content: unknown) {
@@ -144,16 +160,29 @@ export async function updateMemo(db: D1Database, userId: string, id: string, con
     createdAt: existing.created_at,
     updatedAt: now,
     tags: extractTags(text).sort(),
+    attachments: await listAttachments(db, id),
   } as Memo;
 }
 
-export async function deleteMemo(db: D1Database, userId: string, id: string) {
+async function listAttachments(db: D1Database, memoId: string) {
+  const row = await db.prepare(`${SELECT_MEMO} WHERE m.id = ?`).bind(memoId).first<MemoRow>();
+  return row ? toMemo(row).attachments : [];
+}
+
+/** 删除 memo；返回需要从 R2 删除的文件 key */
+export async function deleteMemo(db: D1Database, userId: string, id: string): Promise<string[]> {
+  const { results: files } = await db
+    .prepare("SELECT r2_key, playback_key FROM attachments WHERE memo_id = ? AND user_id = ?")
+    .bind(id, userId)
+    .all<{ r2_key: string | null; playback_key: string | null }>();
   const res = await db.batch([
     db.prepare("DELETE FROM memo_tags WHERE memo_id = ? AND user_id = ?").bind(id, userId),
     db.prepare("DELETE FROM memos_fts WHERE memo_id = ? AND user_id = ?").bind(id, userId),
+    db.prepare("DELETE FROM attachments WHERE memo_id = ? AND user_id = ?").bind(id, userId),
     db.prepare("DELETE FROM memos WHERE id = ? AND user_id = ?").bind(id, userId),
   ]);
-  if (!res[2].meta.changes) throw new MemoError(404, "不存在");
+  if (!res[3].meta.changes) throw new MemoError(404, "不存在");
+  return files.flatMap((f) => [f.r2_key, f.playback_key]).filter((k): k is string => !!k);
 }
 
 export async function listTags(db: D1Database, userId: string) {

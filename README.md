@@ -20,6 +20,7 @@
 - 侧边栏统计和最近 16 周的热力图
 - API Token（按权限 scope 授权，可撤销、可设过期）、MCP 服务器（`/mcp`）、命令行工具 `yaf`
 - 洞察：按计划（每天 / 每周 / 每月 / 自定义 cron）回顾 memo，生成「反复出现的主题 / 新的连接 / 想做未做 / 值得追问的问题」，每条结论附 memo 引用；可反馈、存为 memo
+- 微信收录（实验性，非官方协议）：扫码连接微信 ClawBot，发给它的文字 / 图片 / 语音存为 memo，并回复「已记录」
 - 设置页：账号与安全（修改密码、退出其他设备）、API Token、洞察计划与模型、语义索引
 
 ## 本地开发
@@ -43,7 +44,9 @@ npx wrangler vectorize create yaf-memos --dimensions=1024 --metric=cosine
 npx wrangler vectorize create-metadata-index yaf-memos --propertyName=userId --type=string
 npm run db:migrate:remote
 npx wrangler secret put SETUP_TOKEN    # 推荐：防止部署后被他人抢先注册 admin
-openssl rand -base64 32 | npx wrangler secret put ENCRYPTION_KEY   # 加密用户的 Claude API key
+openssl rand -base64 32 | npx wrangler secret put ENCRYPTION_KEY   # 加密 Claude API key、微信 bot_token
+# 可选：微信图片 / 语音原文件。先在控制台开通 R2，再：
+# npx wrangler r2 bucket create yaf-media，并取消 wrangler.jsonc 里 r2_buckets 的注释
 npm run deploy
 ```
 
@@ -84,6 +87,7 @@ worker/          # API（Hono）
   index-workflow.ts # 补算向量的 Workflow
   insights.ts    # 洞察计划、报告接口、Cron 调度
   insight-engine.ts / insight-workflow.ts # 洞察生成（取材料、聚类、总结、校验引用）
+  wechat/        # 微信：protocol.ts（协议适配层）、bridge.ts（WechatBridge DO）、media.ts、routes.ts
 shared/segment.ts  # 中文切词（Intl.Segmenter，前后端共用）
 packages/cli/    # yaf 命令行工具
 shared/tags.ts # 标签提取（前后端共用）
@@ -117,6 +121,10 @@ migrations/    # D1 schema
 | GET | `/api/insights`、`/api/insights/:id` | 报告列表（含未读数）/ 详情 |
 | POST | `/api/insights/:id/feedback`、`/api/insights/:id/save` | 反馈 / 存为 memo |
 | GET / PUT | `/api/settings/ai` | Claude API key 状态 / 设置 |
+| GET / DELETE | `/api/wechat` | 微信连接状态 / 解绑 |
+| POST / GET | `/api/wechat/qrcode`、`/api/wechat/qrcode/status` | 获取二维码 / 查询扫码状态（长轮询） |
+| POST / PATCH | `/api/wechat/qrcode/verify`、`/api/wechat/rules` | 提交验证码 / 收录规则 |
+| GET | `/api/attachments/:id` | 附件文件（校验归属） |
 | POST | `/mcp` | MCP（Streamable HTTP），需 Bearer Token |
 
 除 Token 管理、修改密码外，`/api/*` 也接受 `Authorization: Bearer yaf_pat_…`，按 scope 校验：`memos:read`、`memos:write`、`export`、`insights:read`。

@@ -5,6 +5,9 @@ export interface Env {
   VECTORS: Vectorize;
   INDEX_WORKFLOW: Workflow<{ userId: string }>;
   INSIGHT_WORKFLOW: Workflow<import("./insight-workflow").InsightParams>;
+  WECHAT: DurableObjectNamespace<import("./wechat/bridge").WechatBridge>;
+  /** 微信图片 / 语音原文件；R2 未开通时不绑定，附件只记录描述 */
+  MEDIA?: R2Bucket;
   /** AI Gateway id；留空则不经过 Gateway */
   AI_GATEWAY_ID?: string;
   /** 32 字节 base64，用于加密用户的 Claude API key（`wrangler secret put ENCRYPTION_KEY`） */

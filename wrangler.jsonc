@@ -30,6 +30,11 @@
     // 洞察生成：取材料 → 聚类 → 分簇总结 → 汇总 → 校验引用
     { "name": "yaf-insight", "binding": "INSIGHT_WORKFLOW", "class_name": "InsightWorkflow" }
   ],
+  // 微信：每个绑定一个 DO 实例，用 alarm 长轮询 getupdates
+  "durable_objects": { "bindings": [{ "name": "WECHAT", "class_name": "WechatBridge" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["WechatBridge"] }],
+  // R2（微信图片 / 语音原文件）：账户开通 R2 后执行 `wrangler r2 bucket create yaf-media`，再取消下面的注释
+  // "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "yaf-media" }],
   "vars": {
     // 模型请求经过账户的 AI Gateway（日志、缓存、限流）；留空则直连
     "AI_GATEWAY_ID": "default"

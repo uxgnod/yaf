@@ -6,7 +6,47 @@ export interface Memo {
   tags: string[];
   /** web | wechat | api | mcp | cli */
   source: string;
+  attachments?: Attachment[];
 }
+
+export interface Attachment {
+  id: string;
+  kind: "image" | "voice";
+  mime: string | null;
+  durationMs: number | null;
+  description: string | null;
+  hasFile: boolean;
+  playable: boolean;
+}
+
+export interface WechatRules {
+  autoTag: boolean;
+  keepAudio: boolean;
+  replyConfirm: boolean;
+  mergeWindow: boolean;
+}
+
+export interface WechatState {
+  status: "none" | "pending" | "active" | "error" | "unbound";
+  botId?: string | null;
+  rules: WechatRules;
+  lastEventAt?: number | null;
+  lastError?: string | null;
+  connectedAt?: number | null;
+  qrExpiresAt?: number | null;
+  mediaEnabled: boolean;
+}
+
+export type QrPollStatus =
+  | "wait"
+  | "scaned"
+  | "need_verifycode"
+  | "verify_code_blocked"
+  | "expired"
+  | "confirmed"
+  | "already_bound"
+  | "error"
+  | "none";
 
 export type SearchMode = "hybrid" | "keyword" | "semantic";
 export type SearchSort = "relevance" | "time";
@@ -207,6 +247,15 @@ export const api = {
   aiSettings: () => request<{ hasClaudeKey: boolean; workersAiModel: string; claudeModel: string }>("/settings/ai"),
   setClaudeKey: (anthropicKey: string | null) =>
     request<{ hasClaudeKey: boolean }>("/settings/ai", { method: "PUT", body: json({ anthropicKey }) }),
+
+  wechat: () => request<WechatState>("/wechat"),
+  wechatQrcode: () => request<{ qrContent: string; expiresAt: number }>("/wechat/qrcode", { method: "POST" }),
+  wechatQrStatus: () => request<{ status: QrPollStatus; retry?: boolean; error?: string }>("/wechat/qrcode/status"),
+  wechatVerify: (code: string) => request("/wechat/qrcode/verify", { method: "POST", body: json({ code }) }),
+  wechatRules: (rules: Partial<WechatRules>) =>
+    request<{ rules: WechatRules }>("/wechat/rules", { method: "PATCH", body: json(rules) }),
+  wechatUnbind: () => request("/wechat", { method: "DELETE" }),
+  attachmentUrl: (id: string, playback = false) => `/api/attachments/${id}${playback ? "?playback=1" : ""}`,
 
   exportUrl: (params: { tag?: string; format: "md" | "json" }) => `/api/export${qs(params)}`,
 };
