@@ -15,11 +15,11 @@
 
 | 步骤 | 内容 | 依赖 | 状态 |
 |---|---|---|---|
-| 0 | 微信验证原型 | — | 代码完成，待扫码实测 |
+| 0 | 微信验证原型 | — | 已完成（扫码、收消息、语音转写已验证） |
 | 1 | 底座 + API Token + MCP + CLI | — | 已完成（npm 发布待用户登录） |
 | 2 | 混合检索 + 相关笔记 | 1（底座） | 已完成 |
 | 3 | 洞察 | 2 | 已完成 |
-| 4 | 微信正式接入 | 0 的结论、1（附件 / 来源） | 代码完成并部署，待扫码实测、R2 开通 |
+| 4 | 微信正式接入 | 0 的结论、1（附件 / 来源） | 已上线，已扫码绑定；R2 已开通；语音网页回放未做 |
 
 ---
 
@@ -27,11 +27,11 @@
 
 目标：确认 ClawBot 协议在 Worker 上可用，再决定第 4 步做不做。
 
-- [x] 在 Worker 里请求二维码（`get_bot_qrcode`，POST + `bot_type=3`，本地和线上 Worker 均能拿到二维码）；手机扫码（待用户）
+- [x] 在 Worker 里请求二维码（`get_bot_qrcode`，POST + `bot_type=3`），手机扫码绑定成功（2026-10-25）
 - [ ] 轮询扫码状态（`get_qrcode_status`）直到 `confirmed`，拿到 `bot_token`
 - [ ] 长轮询 `getupdates` 收到一条文字消息
 - [ ] 用 `sendmessage` 回复一条
-- [ ] 实测：发一条语音，看 `voice_item.text`（微信转写）是否总有值
+- [x] 实测：发一条语音，`voice_item.text` 有值（3.6 秒的语音，微信给了转写）
 - [ ] 实测：绑定 yaf 后，原来连接的 OpenClaw 是否被断开
 - [ ] 结论写进 ROADMAP 第 9 节（决策记录）
 
@@ -129,7 +129,7 @@
 
 ### 后端
 - [x] 迁移：`attachments`（memo_id、类型、R2 key、时长、尺寸、描述）、`wechat_bindings`（加密的 bot_token、bot_id、baseurl、游标、收录规则、状态）
-- [ ] R2 bucket 绑定（**账户未开通 R2，待用户在控制台开通**）；附件读取接口（校验归属）已完成
+- [x] R2 bucket `yaf-media` 绑定（2026-10-25 用户开通 R2）；附件读取接口（校验归属）
 - [x] 绑定接口：取二维码、查询状态（处理 `scaned_but_redirect` 换域名、`need_verifycode` 提交验证码）、解绑
 - [x] `WechatBridge` Durable Object：alarm 循环 getupdates → 按消息 id 去重 → 处理 → 存游标
 - [x] 文字 → memo（`source = wechat`，按规则追加 `#微信`）

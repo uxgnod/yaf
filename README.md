@@ -45,8 +45,7 @@ npx wrangler vectorize create-metadata-index yaf-memos --propertyName=userId --t
 npm run db:migrate:remote
 npx wrangler secret put SETUP_TOKEN    # 推荐：防止部署后被他人抢先注册 admin
 openssl rand -base64 32 | npx wrangler secret put ENCRYPTION_KEY   # 加密 Claude API key、微信 bot_token
-# 可选：微信图片 / 语音原文件。先在控制台开通 R2，再：
-# npx wrangler r2 bucket create yaf-media，并取消 wrangler.jsonc 里 r2_buckets 的注释
+npx wrangler r2 bucket create yaf-media   # 微信图片 / 语音原文件（需先在控制台开通 R2）
 npm run deploy
 ```
 
