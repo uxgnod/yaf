@@ -1,7 +1,9 @@
 import { Hono, type Context } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
-import type { AppEnv, User } from "./env";
+import type { AppEnv, Scope, User } from "./env";
+import { fromB64, randomToken, sha256, toB64 } from "./lib/crypto";
+import { findToken } from "./lib/pat";
 
 const SESSION_COOKIE = "yaf_sid";
 const SESSION_TTL_MS = 30 * 24 * 3600 * 1000;
@@ -9,28 +11,6 @@ const SESSION_TTL_MS = 30 * 24 * 3600 * 1000;
 const PBKDF2_ITERATIONS = 100_000;
 
 const enc = new TextEncoder();
-
-function toB64(buf: ArrayBuffer | Uint8Array): string {
-  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
-  let s = "";
-  for (const b of bytes) s += String.fromCharCode(b);
-  return btoa(s);
-}
-
-function fromB64(s: string): Uint8Array<ArrayBuffer> {
-  return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
-}
-
-function randomToken(bytes = 32): string {
-  return toB64(crypto.getRandomValues(new Uint8Array(bytes)))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-}
-
-async function sha256(s: string): Promise<string> {
-  return toB64(await crypto.subtle.digest("SHA-256", enc.encode(s)));
-}
 
 async function pbkdf2(password: string, salt: Uint8Array<ArrayBuffer>, iterations: number): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
@@ -77,20 +57,46 @@ async function createSession(c: Context<AppEnv>, userId: string) {
   });
 }
 
-export const requireUser = createMiddleware<AppEnv>(async (c, next) => {
+async function sessionUser(c: Context<AppEnv>): Promise<User | null> {
   const sid = getCookie(c, SESSION_COOKIE);
-  if (!sid) return c.json({ error: "未登录" }, 401);
-  const user = await c.env.DB.prepare(
+  if (!sid) return null;
+  return c.env.DB.prepare(
     `SELECT u.id, u.email, u.name, u.role, u.created_at
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.id_hash = ? AND s.expires_at > ?`,
   )
     .bind(await sha256(sid), Date.now())
     .first<User>();
+}
+
+/** 只接受登录会话（Cookie）。用于 Token 管理、修改密码等敏感操作 */
+export const requireUser = createMiddleware<AppEnv>(async (c, next) => {
+  const user = await sessionUser(c);
   if (!user) return c.json({ error: "未登录" }, 401);
   c.set("user", user);
+  c.set("auth", { kind: "session" });
   await next();
 });
+
+/** 接受 Cookie 或 `Authorization: Bearer yaf_pat_…`；Token 必须拥有 scope */
+export function requireScope(scope: Scope) {
+  return createMiddleware<AppEnv>(async (c, next) => {
+    const header = c.req.header("Authorization");
+    if (header?.startsWith("Bearer ")) {
+      const found = await findToken(c.env.DB, header.slice(7).trim(), c.executionCtx);
+      if (!found) return c.json({ error: "Token 无效或已过期" }, 401);
+      if (!found.scopes.includes(scope)) return c.json({ error: `Token 缺少权限 ${scope}` }, 403);
+      c.set("user", found.user);
+      c.set("auth", { kind: "token", tokenId: found.tokenId, scopes: found.scopes });
+      return next();
+    }
+    const user = await sessionUser(c);
+    if (!user) return c.json({ error: "未登录" }, 401);
+    c.set("user", user);
+    c.set("auth", { kind: "session" });
+    await next();
+  });
+}
 
 export const auth = new Hono<AppEnv>();
 
@@ -142,4 +148,40 @@ auth.post("/logout", async (c) => {
   return c.json({ ok: true });
 });
 
-auth.get("/me", requireUser, (c) => c.json({ user: c.get("user") }));
+auth.get("/me", requireScope("memos:read"), (c) => c.json({ user: c.get("user") }));
+
+/** 修改密码：校验当前密码，成功后让其他设备上的会话全部失效 */
+auth.post("/password", requireUser, async (c) => {
+  const body = await c.req.json<{ current?: string; next?: string }>();
+  const user = c.get("user");
+  if (typeof body.next !== "string" || body.next.length < 8) return c.json({ error: "新密码至少 8 位" }, 400);
+  const row = await c.env.DB.prepare("SELECT password_hash FROM users WHERE id = ?")
+    .bind(user.id)
+    .first<{ password_hash: string }>();
+  if (!row || !(await verifyPassword(String(body.current ?? ""), row.password_hash))) {
+    return c.json({ error: "当前密码错误" }, 400);
+  }
+  const keep = await sha256(getCookie(c, SESSION_COOKIE) ?? "");
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?").bind(await hashPassword(body.next), user.id),
+    c.env.DB.prepare("DELETE FROM sessions WHERE user_id = ? AND id_hash != ?").bind(user.id, keep),
+  ]);
+  return c.json({ ok: true });
+});
+
+/** 登录会话数量（不含过期的） */
+auth.get("/sessions", requireUser, async (c) => {
+  const row = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM sessions WHERE user_id = ? AND expires_at > ?")
+    .bind(c.get("user").id, Date.now())
+    .first<{ n: number }>();
+  return c.json({ count: row?.n ?? 0 });
+});
+
+/** 退出其他设备：只保留当前会话 */
+auth.post("/sessions/revoke-others", requireUser, async (c) => {
+  const keep = await sha256(getCookie(c, SESSION_COOKIE) ?? "");
+  const res = await c.env.DB.prepare("DELETE FROM sessions WHERE user_id = ? AND id_hash != ?")
+    .bind(c.get("user").id, keep)
+    .run();
+  return c.json({ revoked: res.meta.changes });
+});

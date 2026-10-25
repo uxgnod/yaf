@@ -1,0 +1,170 @@
+# yaf v2 开发计划
+
+> 最后更新：2026-10-25（第 1 步完成）
+> 本文件是 v2 的**执行清单**：每一步具体做什么、做完怎么验收。设计理由和技术细节见 [ROADMAP.md](./ROADMAP.md)，界面改动的确认记录见 [UI-CHANGES.md](./UI-CHANGES.md)。
+> 原型（私有 Artifact）：https://claude.ai/artifact/FFZxFDbssjn2fLXvU6KPEB
+
+## 使用方式
+
+- 每完成一项，把 `[ ]` 改成 `[x]`；一个步骤全部完成后，同步更新 ROADMAP 第 7 节的「状态」列。
+- 开发进度**只在本文件勾选**。UI-CHANGES.md 只用于确认界面改动，确认后不再维护。
+- 原则：**不删除任何现有功能**（侧边栏统计、热力图、标签树、输入框、卡片菜单、导出、主题等全部保留）。
+- 所有新界面同时做亮色和暗色，手机宽度下可用。
+
+## 总览
+
+| 步骤 | 内容 | 依赖 | 状态 |
+|---|---|---|---|
+| 0 | 微信验证原型 | — | 待开始 |
+| 1 | 底座 + API Token + MCP + CLI | — | 已完成（npm 发布待用户登录） |
+| 2 | 混合检索 + 相关笔记 | 1（底座） | 待开始 |
+| 3 | 洞察 | 2 | 待开始 |
+| 4 | 微信正式接入 | 0 的结论、1（附件 / 来源） | 待开始 |
+
+---
+
+## 第 0 步：微信验证原型（半天，不改界面）
+
+目标：确认 ClawBot 协议在 Worker 上可用，再决定第 4 步做不做。
+
+- [ ] 在 Worker 里请求二维码（`get_bot_qrcode`），手机扫码
+- [ ] 轮询扫码状态（`get_qrcode_status`）直到 `confirmed`，拿到 `bot_token`
+- [ ] 长轮询 `getupdates` 收到一条文字消息
+- [ ] 用 `sendmessage` 回复一条
+- [ ] 实测：发一条语音，看 `voice_item.text`（微信转写）是否总有值
+- [ ] 实测：绑定 yaf 后，原来连接的 OpenClaw 是否被断开
+- [ ] 结论写进 ROADMAP 第 9 节（决策记录）
+
+**验收**：在微信里发一条文字，Worker 日志里能看到，并且微信能收到回复。
+
+---
+
+## 第 1 步：底座 + API Token + MCP + CLI
+
+### 后端
+- [x] 迁移：`memos.source`（web / wechat / api / mcp / cli，默认 web）
+- [x] 迁移：`api_tokens(id, user_id, name, prefix, token_hash, scopes, last_used_at, expires_at, created_at)`
+- [x] Token 生成：`yaf_pat_<随机串>`，库里只存 SHA-256
+- [x] 鉴权中间件同时接受 Cookie 和 `Authorization: Bearer`，并按 scope 校验（`memos:read`、`memos:write`、`export`、`insights:read`）
+- [x] Token 管理接口：列表、新建（只返回一次明文）、撤销
+- [x] 写入 memo 时记录 `source`；用 Token 调用时更新 `last_used_at`
+- [x] `/mcp` 端点（Agents SDK `createMcpHandler`，Streamable HTTP），工具：`search_memos`、`add_memo`、`get_memo`、`list_tags`（`get_related`、`list_insights` 等第 2、3 步再加）
+- [x] 设备码登录（device code）接口，供 CLI 使用
+
+### 前端
+- [x] 路由：`/settings/*`、`/insights`（洞察页先占位）；标签筛选继续用 `#tag=`
+- [x] 主侧边栏导航新增「设置」
+- [x] 设置页布局：专用侧边栏（「← 返回笔记」+ 账号与安全 / API Token / 微信连接 / 洞察与搜索）
+- [x] 账号与安全：账号信息、修改密码（成功后其他会话失效）、登录会话数 +「退出其他设备」
+- [x] API Token 页：列表（名称、权限、最近使用、过期、撤销）
+- [x] API Token 页：新建弹窗（名称、权限、过期时间）；成功后显示绿色提示框 + 复制按钮，**只显示一次**
+- [x] API Token 页：MCP 接入说明卡片（`claude mcp add --transport http yaf https://yaf.uxgnod.workers.dev/mcp`）
+- [x] API Token 页：CLI 安装说明卡片
+- [x] memo 卡片：来源标记（来自 API / CLI / MCP；web 来源不显示）
+
+### CLI（`packages/cli`）
+- [x] 仓库改为 workspaces：沿用 npm（已有 package-lock），Web 留在根目录，新增 `packages/cli`（见 ROADMAP 决策记录 2026-10-25）
+- [x] `yaf login`（设备码流程，配置存 `~/.config/yaf/`）
+- [x] `yaf add`（支持管道输入）、`yaf search`、`yaf tags`、`yaf export --tag`
+- [ ] 发布到 npm（包名 `yaf-cli`，命令 `yaf`；需要用户在本机 `npm login` 后执行 `npm publish -w yaf-cli`）
+
+**验收**：在 Claude Code 里通过 MCP 搜索和新增 memo；`echo "想法 #inbox" | yaf add` 能写入；撤销 Token 后立即失效。
+
+---
+
+## 第 2 步：混合检索 + 相关笔记
+
+### 后端
+- [ ] 迁移：FTS5 表；写入时用 `Intl.Segmenter('zh', {granularity:'word'})` 切词后再入索引，查询端同样切词
+- [ ] 写入 / 编辑 / 删除时同步 FTS 和向量（向量用 `ctx.waitUntil` 后台算）
+- [ ] Workers AI `@cf/baai/bge-m3` 生成向量，存 Vectorize（metadata：userId、createdAt）
+- [ ] 搜索接口新增 `mode=hybrid|keyword|semantic` 和排序参数；混合模式用 RRF 融合（`1/(60+rank)`）
+- [ ] 返回命中原因 `{ keywordRank, semanticScore }`
+- [ ] 相关笔记接口：用 memo 自身向量查最近邻，排除自己
+- [ ] Workflow：存量 memo 分批补算向量；索引状态接口（已索引 / 总数）
+- [ ] MCP 新增工具 `get_related`
+
+### 前端
+- [ ] 搜索模式切换：混合 / 关键词 / 语义，**仅在输入了搜索词时显示**，默认混合
+- [ ] 结果摘要栏：「找到 N 条 · 关键词 X · 语义 Y」+「相关度 / 时间」排序切换
+- [ ] 卡片命中标记：「关键词」「语义 0.84」
+- [ ] 关键词高亮
+- [ ] ⌘K 聚焦搜索框
+- [ ] 搜索框保持「左标题、右搜索」布局，聚焦时展开变宽
+- [ ] memo 卡片：「相关笔记 · N」，默认收起，点开显示 2–3 条
+- [ ] 设置 › 洞察与搜索：「语义搜索索引」区块（同步状态、进度条、重建索引；显示「融合方式：RRF」，不显示权重）
+
+**验收**：搜「睡眠」能找到没写「睡眠」这个词但相关的 memo；两个字的中文词能被关键词搜到；重建索引后进度条走到 100%。
+
+---
+
+## 第 3 步：洞察
+
+### 后端
+- [ ] 迁移：`insight_plans`（频率 / cron、时区、范围标签、分析窗口、视角、补充提示词、模型、投递方式、启用）、`insights`（报告内容、引用、状态、反馈）
+- [ ] Cron Trigger（每 15 分钟）检查到期计划（croner 解析）
+- [ ] Workflow：取窗口内 memo → 向量召回历史 → 聚类 → 分簇总结 → 汇总（`generateObject` + zod）→ 校验引用的 memo id → 存库
+- [ ] 模型接入：Workers AI（免费）和 Claude（`@ai-sdk/anthropic`，用户自带 key），都经过 AI Gateway
+- [ ] Claude API key 加密存储（密钥放 Worker secret）
+- [ ] 接口：计划增删改、立即生成 / 试运行、报告列表与详情、反馈、存为 memo
+- [ ] MCP 新增工具 `list_insights`
+
+### 前端
+- [ ] 主侧边栏导航新增「洞察」，有未读报告时显示「1 新」
+- [ ] 洞察页顶部：当前计划摘要、「管理计划」「立即生成」
+- [ ] 洞察页左列：报告列表（含「生成中」状态）
+- [ ] 洞察页右侧：报告正文（摘要、反复出现的主题、新的连接、想做未做、值得追问的问题），每条结论带可点击的 memo 引用
+- [ ] 洞察页底部：「有用 / 没用」、「存为 memo」
+- [ ] 洞察页沿用完整主侧边栏（统计、热力图、标签都在）
+- [ ] 设置 › 洞察与搜索：计划列表（启用状态、编辑、新建）
+- [ ] 设置 › 洞察与搜索：计划编辑（频率、时间、范围、分析窗口、分析视角、补充提示词、模型、投递、试运行、保存）
+
+**验收**：建一个「每天」计划并试运行，生成的报告里每条结论都能点到真实存在的 memo；点「存为 memo」后能在笔记里搜到。
+
+---
+
+## 第 4 步：微信正式接入
+
+前提：第 0 步结论为可行。
+
+### 后端
+- [ ] 迁移：`attachments`（memo_id、类型、R2 key、时长、尺寸、描述）、`wechat_bindings`（加密的 bot_token、bot_id、baseurl、游标、收录规则、状态）
+- [ ] R2 bucket 绑定；附件读取接口（校验归属）
+- [ ] 绑定接口：取二维码、查询状态（处理 `scaned_but_redirect` 换域名、`need_verifycode` 提交验证码）、解绑
+- [ ] `WechatBridge` Durable Object：alarm 循环 getupdates → 按消息 id 去重 → 处理 → 存游标
+- [ ] 文字 → memo（`source = wechat`，按规则追加 `#微信`）
+- [ ] 图片：下载 → `@noble/ciphers` AES-128-ECB 解密 → 存 R2 → 后台用视觉模型生成描述（用于搜索和向量）
+- [ ] 语音：正文用 `voice_item.text`；SILK 原文件存 R2；`silk-wasm` 转 wav 供回放
+- [ ] 语音转写兜底：`voice_item.text` 为空时，先存「[语音] 转写中…」，后台用 `silk-wasm` 解码成 wav → Workers AI `@cf/openai/whisper-large-v3-turbo` 转写 → 更新正文、标签和向量（是否需要取决于第 0 步实测）
+- [ ] 合并连续消息（2 分钟内，默认关）
+- [ ] 收录后回复「已记录 · #标签」（在 24 小时 `context_token` 窗口内）
+- [ ] 适配层独立：协议失效时只影响微信功能，并在设置页显示错误状态
+
+### 前端
+- [ ] 设置 › 微信连接：二维码（`qrcode` 库渲染）、扫码状态（等待 / 已扫码 / 需验证码 / 已过期）、过期倒计时 + 刷新、验证码输入
+- [ ] 绑定步骤说明、风险提示
+- [ ] 已连接状态 + 「解绑」（原型未画，需补设计）
+- [ ] 收录规则开关：自动加 `#微信`、语音保留原音频、收录后回复确认、合并连续消息
+- [ ] memo 卡片：「来自微信」标记
+- [ ] memo 卡片：语音附件（播放条、时长、转写文字）
+- [ ] memo 卡片：图片附件（缩略图，点击放大）
+
+**验收**：微信里分别发文字、图片、语音，yaf 里各出现一条 memo；语音能回放、文字能搜到；解绑后不再收录。
+
+---
+
+## 原型和设计的不一致（按右侧处理，除非另有决定）
+
+| 项 | 原型 | 处理 |
+|---|---|---|
+| MCP 工具名 | `get_insight` | 以 ROADMAP 为准：`list_insights`、`get_related` 等 |
+| 检索融合 | 「关键词 0.4 / 语义 0.6」权重 | 用 RRF 按名次融合，界面显示「融合方式：RRF」 |
+| 洞察投递 | 有「邮件」「微信推送」选项 | 第 3 步先只做站内；邮件（Cloudflare Email Service）、微信推送以后再加 |
+
+## 待决定
+
+- [ ] 洞察默认模型：Workers AI（免费）还是 Claude（自带 key）？
+- [x] 「账号与安全」页内容：修改密码 + 会话数 / 退出其他设备（2026-10-25）
+- [ ] 网页编辑器是否支持上传图片？
+- [ ] 微信「已连接 / 解绑」界面需补原型
+- [x] CLI 的 npm 包名：`yaf-cli`（与 ROADMAP 一致，npm 上未被占用）

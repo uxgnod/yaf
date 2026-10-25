@@ -1,0 +1,29 @@
+{
+  "name": "yaf-cli",
+  "version": "0.1.0",
+  "description": "Command line client for yaf (Yet Another Flomo)",
+  "type": "module",
+  "bin": {
+    "yaf": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/uxgnod/yaf.git",
+    "directory": "packages/cli"
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "typecheck": "tsc -p . --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2"
+  }
+}

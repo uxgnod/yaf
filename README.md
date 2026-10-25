@@ -16,6 +16,8 @@
 - 导出 Markdown / JSON，可按标签导出（便于交给 AI 分析）
 - 亮色 / 暗色 / 跟随系统 三种主题（左上角按钮切换）
 - 侧边栏统计和最近 16 周的热力图
+- API Token（按权限 scope 授权，可撤销、可设过期）、MCP 服务器（`/mcp`）、命令行工具 `yaf`
+- 设置页：账号与安全（修改密码、退出其他设备）、API Token
 
 ## 本地开发
 
@@ -39,12 +41,38 @@ npm run deploy
 
 设置了 `SETUP_TOKEN` 后，初始化页面需要填写这个口令。admin 创建完成后，`/api/auth/setup` 将永久失效。
 
+## MCP
+
+在 设置 › API Token 新建 Token 后：
+
+```bash
+claude mcp add --transport http yaf https://<你的域名>/mcp --header "Authorization: Bearer <Token>"
+```
+
+工具：`search_memos`、`get_memo`、`add_memo`、`list_tags`。
+
+## CLI
+
+```bash
+npm install -g yaf-cli          # 或在仓库里：npm run cli:build && node packages/cli/dist/index.js
+yaf login --host https://<你的域名>   # 浏览器确认后自动保存 Token 到 ~/.config/yaf/
+echo "想法 #inbox" | yaf add
+yaf search 关键词 --tag inbox
+yaf tags
+yaf export --tag inbox --format md -o inbox.md
+```
+
 ## 结构
 
 ```
-worker/        # API（Hono）
-  auth.ts      # 初始化 admin、登录、登出、会话（PBKDF2 密码哈希，会话 cookie 只在库中存哈希）
-  memos.ts     # memo CRUD、标签、搜索、统计、导出
+worker/          # API（Hono）
+  index.ts       # 入口：/api/* 交给 Hono，/mcp 交给 MCP handler
+  auth.ts        # 初始化 admin、登录、会话、修改密码；鉴权中间件（Cookie 或 Bearer Token + scope）
+  memos.ts       # memo REST 接口、统计、导出
+  memo-service.ts# memo 读写逻辑（REST 和 MCP 共用）
+  tokens.ts      # API Token 管理、设备码登录
+  mcp.ts         # MCP 服务器
+packages/cli/    # yaf 命令行工具
 shared/tags.ts # 标签提取（前后端共用）
 src/           # React 前端
 migrations/    # D1 schema
@@ -63,3 +91,12 @@ migrations/    # D1 schema
 | GET | `/api/tags` | 标签及计数 |
 | GET | `/api/stats?tz=` | 统计与热力图 |
 | GET | `/api/export?tag=&format=md\|json` | 导出 |
+| GET | `/api/memos/:id` | 单条 memo |
+| POST | `/api/auth/password` | 修改密码（仅网页会话） |
+| GET / POST | `/api/auth/sessions`、`/api/auth/sessions/revoke-others` | 会话数 / 退出其他设备 |
+| GET / POST / DELETE | `/api/tokens[/:id]` | API Token 列表 / 新建（明文只返回一次）/ 撤销（仅网页会话） |
+| POST | `/api/device/code`、`/api/device/token` | CLI 设备码登录：发起 / 轮询 |
+| GET / POST | `/api/device/:userCode` | 网页端查看 / 批准设备登录 |
+| POST | `/mcp` | MCP（Streamable HTTP），需 Bearer Token |
+
+除 Token 管理、修改密码外，`/api/*` 也接受 `Authorization: Bearer yaf_pat_…`，按 scope 校验：`memos:read`、`memos:write`、`export`、`insights:read`。

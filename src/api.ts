@@ -4,6 +4,8 @@ export interface Memo {
   createdAt: number;
   updatedAt: number;
   tags: string[];
+  /** web | wechat | api | mcp | cli */
+  source: string;
 }
 
 export interface User {
@@ -21,6 +23,18 @@ export interface TagCount {
 export interface Stats {
   totals: { memos: number; tags: number; days: number };
   heatmap: { day: string; count: number }[];
+}
+
+export type Scope = "memos:read" | "memos:write" | "export" | "insights:read";
+
+export interface ApiToken {
+  id: string;
+  name: string;
+  prefix: string;
+  scopes: Scope[];
+  lastUsedAt: number | null;
+  expiresAt: number | null;
+  createdAt: number;
 }
 
 export class ApiError extends Error {
@@ -69,5 +83,20 @@ export const api = {
   deleteMemo: (id: string) => request(`/memos/${id}`, { method: "DELETE" }),
   tags: () => request<{ tags: TagCount[] }>("/tags"),
   stats: () => request<Stats>(`/stats?tz=${new Date().getTimezoneOffset()}`),
+  changePassword: (current: string, next: string) =>
+    request("/auth/password", { method: "POST", body: json({ current, next }) }),
+  sessions: () => request<{ count: number }>("/auth/sessions"),
+  revokeOtherSessions: () => request<{ revoked: number }>("/auth/sessions/revoke-others", { method: "POST" }),
+
+  listTokens: () => request<{ tokens: ApiToken[] }>("/tokens"),
+  createToken: (body: { name: string; scopes: Scope[]; expiresInDays: number | null }) =>
+    request<{ token: string; info: ApiToken }>("/tokens", { method: "POST", body: json(body) }),
+  revokeToken: (id: string) => request(`/tokens/${id}`, { method: "DELETE" }),
+
+  getDevice: (code: string) =>
+    request<{ clientName: string; scopes: Scope[]; status: string }>(`/device/${encodeURIComponent(code)}`),
+  approveDevice: (code: string, approve: boolean) =>
+    request(`/device/${encodeURIComponent(code)}`, { method: "POST", body: json({ approve }) }),
+
   exportUrl: (params: { tag?: string; format: "md" | "json" }) => `/api/export${qs(params)}`,
 };

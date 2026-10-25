@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Stats, TagCount, User } from "../api";
+import { navigate } from "../router";
 
 interface TagNode {
   name: string;
@@ -27,7 +28,7 @@ function buildTree(tags: TagCount[]): TagNode[] {
   return root.children;
 }
 
-function TagItem({ node, active, onSelect, depth }: { node: TagNode; active: string | null; onSelect: (t: string) => void; depth: number }) {
+function TagItem({ node, active, onSelect, depth }: { node: TagNode; active: string | null | undefined; onSelect: (t: string) => void; depth: number }) {
   const hasChildren = node.children.length > 0;
   const containsActive = !!active && active.startsWith(node.path + "/");
   const [open, setOpen] = useState(containsActive);
@@ -104,7 +105,9 @@ interface Props {
   user: User;
   stats: Stats | null;
   tags: TagCount[];
-  activeTag: string | null;
+  /** undefined：当前不在笔记列表页，任何标签都不高亮 */
+  activeTag: string | null | undefined;
+  view: "memos" | "insights";
   onSelectTag: (tag: string | null) => void;
   onExport: () => void;
   onLogout: () => void;
@@ -112,7 +115,7 @@ interface Props {
   onToggleTheme: () => void;
 }
 
-export function Sidebar({ user, stats, tags, activeTag, onSelectTag, onExport, onLogout, theme, onToggleTheme }: Props) {
+export function Sidebar({ user, stats, tags, activeTag, view, onSelectTag, onExport, onLogout, theme, onToggleTheme }: Props) {
   const tree = useMemo(() => buildTree(tags), [tags]);
   return (
     <aside className="sidebar">
@@ -142,8 +145,14 @@ export function Sidebar({ user, stats, tags, activeTag, onSelectTag, onExport, o
         <div className={"nav-item" + (activeTag === null ? " active" : "")} onClick={() => onSelectTag(null)}>
           <span className="nav-icon">▤</span> 全部笔记
         </div>
+        <div className={"nav-item" + (view === "insights" ? " active" : "")} onClick={() => navigate("/insights")}>
+          <span className="nav-icon">✦</span> 洞察
+        </div>
         <div className="nav-item" onClick={onExport}>
           <span className="nav-icon">⤓</span> 导出
+        </div>
+        <div className="nav-item" onClick={() => navigate("/settings/account")}>
+          <span className="nav-icon">⚙</span> 设置
         </div>
       </nav>
 

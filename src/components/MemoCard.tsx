@@ -9,6 +9,8 @@ interface Props {
   onDelete: (id: string) => Promise<void>;
 }
 
+const SOURCE_LABEL: Record<string, string> = { wechat: "来自微信", api: "来自 API", cli: "来自 CLI", mcp: "来自 MCP" };
+
 function formatTime(ts: number) {
   const d = new Date(ts);
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -50,9 +52,12 @@ export function MemoCard({ memo, onUpdate, onDelete }: Props) {
   return (
     <article className="memo-card">
       <header className="memo-head">
-        <time title={memo.updatedAt !== memo.createdAt ? `编辑于 ${formatTime(memo.updatedAt)}` : undefined}>
-          {formatTime(memo.createdAt)}
-        </time>
+        <div className="memo-meta">
+          <time title={memo.updatedAt !== memo.createdAt ? `编辑于 ${formatTime(memo.updatedAt)}` : undefined}>
+            {formatTime(memo.createdAt)}
+          </time>
+          {SOURCE_LABEL[memo.source] && <span className={`source-badge source-${memo.source}`}>{SOURCE_LABEL[memo.source]}</span>}
+        </div>
         <div className="menu-wrap" ref={menuRef}>
           <button className="icon-btn" onClick={() => setMenu((v) => !v)} aria-label="更多">
             ···

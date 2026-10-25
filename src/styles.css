@@ -16,6 +16,8 @@
   --accent-soft: rgba(94, 106, 210, 0.1);
   --accent-text: #ffffff;
   --danger: #d1453b;
+  --ok: #1f8a4c;
+  --ok-soft: rgba(31, 138, 76, 0.09);
   --code-bg: #f1f2f4;
   --heat-0: #ebecef;
   --heat-1: #c8ccf1;
@@ -43,6 +45,8 @@
     --accent-hover: #8280ff;
     --accent-soft: rgba(113, 112, 255, 0.14);
     --danger: #f06a5f;
+    --ok: #4cc38a;
+    --ok-soft: rgba(76, 195, 138, 0.12);
     --code-bg: #202126;
     --heat-0: #1e1f24;
     --heat-1: #2f2f66;
@@ -68,6 +72,8 @@
   --accent-hover: #8280ff;
   --accent-soft: rgba(113, 112, 255, 0.14);
   --danger: #f06a5f;
+  --ok: #4cc38a;
+  --ok-soft: rgba(76, 195, 138, 0.12);
   --code-bg: #202126;
   --heat-0: #1e1f24;
   --heat-1: #2f2f66;
@@ -393,6 +399,78 @@ label input:focus, label select:focus { border-color: var(--accent); box-shadow:
 }
 .segmented button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
 
+/* ---------- v2：来源标记 ---------- */
+.memo-meta { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.source-badge {
+  font-size: 11px; line-height: 18px; padding: 0 6px; border-radius: 4px;
+  background: var(--surface-hover); color: var(--muted); border: 1px solid var(--border);
+}
+.source-wechat { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+
+/* ---------- v2：占位页 ---------- */
+.placeholder-card {
+  margin-top: 24px; padding: 40px 24px; text-align: center;
+  background: var(--surface); border: 1px dashed var(--border-strong); border-radius: 12px;
+}
+.placeholder-card h3 { margin: 8px 0 4px; font-size: 15px; font-weight: 600; }
+.placeholder-card p { margin: 0 auto; max-width: 360px; font-size: 13px; }
+.placeholder-icon { font-size: 22px; color: var(--accent); }
+
+/* ---------- v2：设置页 ---------- */
+.back-btn { flex: 1; justify-content: flex-start; }
+.settings-main { max-width: 760px; }
+.settings-stack { display: flex; flex-direction: column; gap: 14px; }
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 16px; display: flex; flex-direction: column; gap: 12px;
+}
+.card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.card-head h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.card-head p { margin: 2px 0 0; }
+.card > p { margin: 0; }
+.kv { display: grid; grid-template-columns: 64px 1fr; gap: 6px 12px; font-size: 13px; }
+.form-grid { display: flex; flex-direction: column; gap: 12px; max-width: 360px; }
+.form-ok { color: var(--ok); font-size: 13px; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field-label { font-size: 12px; color: var(--muted); }
+.check-list { display: flex; flex-direction: column; gap: 2px; }
+label.check {
+  flex-direction: row; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2);
+  padding: 4px 0; cursor: pointer;
+}
+label.check input { height: auto; margin: 0; accent-color: var(--accent); }
+label.check .mono { margin-left: auto; }
+
+.token-list { display: flex; flex-direction: column; }
+.token-row {
+  display: flex; align-items: center; gap: 12px; padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.token-row:first-child { border-top: 0; padding-top: 0; }
+.token-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.token-name { font-weight: 500; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.token-scopes { display: flex; flex-wrap: wrap; gap: 4px; }
+.scope-chip {
+  font-size: 11px; line-height: 18px; padding: 0 6px; border-radius: 4px;
+  background: var(--accent-soft); color: var(--accent);
+}
+.danger-badge { color: var(--danger); border-color: var(--danger); }
+.danger-text { color: var(--danger); }
+
+.code-line {
+  display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px;
+  background: var(--code-bg); border-radius: 6px; min-width: 0;
+}
+.code-line code {
+  flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap;
+  font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px;
+}
+.notice-ok {
+  display: flex; flex-direction: column; gap: 10px; padding: 14px 16px;
+  border-radius: 10px; border: 1px solid var(--ok); background: var(--ok-soft); font-size: 13px;
+}
+.notice-ok .code-line { background: var(--surface); }
+
 /* ---------- 移动端 ---------- */
 @media (max-width: 768px) {
   .sidebar {
@@ -406,4 +484,6 @@ label input:focus, label select:focus { border-color: var(--accent); box-shadow:
   .search { width: 150px; }
   .hint { display: none; }
   .memo-head .icon-btn { opacity: 1; }
+  .token-row { align-items: flex-start; }
+  .card-head { flex-wrap: wrap; }
 }

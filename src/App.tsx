@@ -2,12 +2,16 @@ import { useEffect, useState } from "react";
 import { api, ApiError, type User } from "./api";
 import { AuthScreen } from "./components/AuthScreen";
 import { Home } from "./components/Home";
+import { Settings } from "./components/Settings";
+import { DeviceApprove } from "./components/DeviceApprove";
+import { usePath } from "./router";
 
 type Phase = { kind: "loading" } | { kind: "setup"; tokenRequired: boolean } | { kind: "login" } | { kind: "app"; user: User };
 
 export function App() {
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [error, setError] = useState<string | null>(null);
+  const path = usePath();
 
   async function boot() {
     try {
@@ -35,13 +39,11 @@ export function App() {
         onDone={boot}
       />
     );
-  return (
-    <Home
-      user={phase.user}
-      onLogout={async () => {
-        await api.logout();
-        setPhase({ kind: "login" });
-      }}
-    />
-  );
+  const logout = async () => {
+    await api.logout();
+    setPhase({ kind: "login" });
+  };
+  if (path === "/device") return <DeviceApprove />;
+  if (path.startsWith("/settings")) return <Settings user={phase.user} path={path} />;
+  return <Home user={phase.user} view={path.startsWith("/insights") ? "insights" : "memos"} onLogout={logout} />;
 }
