@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type Attachment, type Memo, type MemoHit } from "../api";
 import { renderMarkdown } from "../markdown";
+import { silkToWavUrl } from "../silk";
 import { Editor } from "./Editor";
 
 interface Props {
@@ -184,18 +185,16 @@ function Attachments({ list }: { list: Attachment[] }) {
       {voices.map((a) => (
         <div key={a.id} className="att-voice">
           <span className="att-voice-icon">🎙</span>
-          {a.playable ? (
-            <audio controls preload="none" src={api.attachmentUrl(a.id, true)} />
+          {a.hasFile ? (
+            <VoicePlayer id={a.id} durationMs={a.durationMs} />
           ) : (
-            <span className="att-voice-bar">
-              <span className="att-voice-wave" />
-              <span className="muted small">{duration(a.durationMs) || "语音"}</span>
-            </span>
-          )}
-          {!a.playable && (
-            <span className="muted small" title="微信语音是 SILK 格式，浏览器暂不能直接播放">
-              {a.hasFile ? "原音频已保存" : "未保存原音频"}
-            </span>
+            <>
+              <span className="att-voice-bar">
+                <span className="att-voice-wave" />
+                <span className="muted small">{duration(a.durationMs) || "语音"}</span>
+              </span>
+              <span className="muted small">未保存原音频</span>
+            </>
           )}
         </div>
       ))}
@@ -205,5 +204,33 @@ function Attachments({ list }: { list: Attachment[] }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** 点击后才下载并解码 SILK，解码完成后用原生播放器播放 */
+function VoicePlayer({ id, durationMs }: { id: string; durationMs: number | null }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [state, setState] = useState<"idle" | "loading" | "error">("idle");
+  if (src) return <audio controls autoPlay src={src} />;
+  return (
+    <button
+      className="att-voice-bar att-voice-play"
+      disabled={state === "loading"}
+      onClick={async () => {
+        setState("loading");
+        try {
+          setSrc(await silkToWavUrl(api.attachmentUrl(id)));
+        } catch (e) {
+          console.error(e);
+          setState("error");
+        }
+      }}
+    >
+      <span className="att-voice-icon-play">{state === "loading" ? "…" : "▶"}</span>
+      <span className="att-voice-wave" />
+      <span className="muted small">
+        {state === "error" ? "解码失败" : state === "loading" ? "加载中" : duration(durationMs) || "播放"}
+      </span>
+    </button>
   );
 }

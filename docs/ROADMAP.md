@@ -105,7 +105,7 @@ Cron（每 15 分钟）→ 查到期的 insight_plans（用 croner 解析 cron �
 | 1 | 底座 + API Token + MCP + CLI | 工作量最小，做完就能让 agent 读写 memo | — | 已完成（2026-10-25；npm 发布待做） |
 | 2 | 混合检索 + 相关笔记 | 洞察依赖它 | Workers AI、Vectorize | 已完成（2026-10-25） |
 | 3 | 洞察 | 依赖第 2 步 | Workflows、Cron、AI Gateway | 已完成（2026-10-25） |
-| 4 | 微信正式接入 | 依赖附件、R2 和第 0 步结论 | DO、R2 | 已上线（2026-10-25）；语音网页回放未做 |
+| 4 | 微信正式接入 | 依赖附件、R2 和第 0 步结论 | DO、R2 | 已完成（2026-10-25） |
 
 ## 8. 待决定的问题
 
@@ -140,3 +140,4 @@ Cron（每 15 分钟）→ 查到期的 insight_plans（用 croner 解析 cron �
 - 2026-10-25：语音回放暂不做：`silk-wasm` 是 Emscripten 构建，运行时用 fs / fetch 读取 .wasm，不能直接在 Workers 上运行；要支持需自己用 `instantiateWasm` 包一层，或在浏览器端解码。是否需要取决于实测 `voice_item.text` 是否总有值。
 - 2026-10-25：图片描述模型 `@cf/mistralai/mistral-small-3.1-24b-instruct`（免费套餐可用，约 5 秒一张）。
 - 2026-10-25：用户扫码绑定成功；实测语音消息带 `voice_item.text`（微信转写）。用户开通 R2，创建 `yaf-media` 并绑定为 `MEDIA`，之后收到的图片 / 语音会保存原文件（开通前收到的补不回来，微信下载链接会过期）。
+- 2026-10-25：语音回放放到浏览器端：点播放时才动态加载 `silk-wasm`（wasm 约 92 KB gzip），把 R2 里的 SILK 解码成 24 kHz wav 再交给 `<audio>`。Workers 端不再转码，`attachments.playback_key` 保留未用。vite 需要 `optimizeDeps.exclude: ["silk-wasm"]`，否则预构建会打断 `new URL("silk.wasm", import.meta.url)`。
