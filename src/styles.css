@@ -270,6 +270,8 @@ label input:focus, label select:focus { border-color: var(--accent); box-shadow:
 .tag-item .count { font-size: 11px; color: var(--muted); }
 .empty-tags { padding: 4px 8px; }
 .sidebar-bottom { margin-top: auto; }
+.source-link { display: inline-block; padding: 6px 8px; color: var(--muted); text-decoration: none; }
+.source-link:hover { color: var(--text-2); text-decoration: underline; }
 
 /* ---------- 顶栏 / 搜索 ---------- */
 .topbar { display: flex; align-items: center; gap: 12px; height: 40px; margin-bottom: 12px; }

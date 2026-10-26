@@ -1,7 +1,8 @@
 {
   "name": "yaf",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "description": "Yet Another Flomo — a flomo-like memo app on Cloudflare Workers + D1",
   "scripts": {

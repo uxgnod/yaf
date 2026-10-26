@@ -1,5 +1,5 @@
 // 微信 ClawBot（iLink）协议适配层。只包含 yaf 用到的接口。
-// 协议来自 @tencent-weixin/openclaw-weixin v2.4.10（MIT）源码；非官方接入，随时可能失效，
+// 协议来自 @tencent-weixin/openclaw-weixin v2.4.10（MIT，版权声明见 THIRD_PARTY_NOTICES.md）源码；非官方接入，随时可能失效，
 // 所以所有调用都集中在这里，失败只影响微信功能。
 
 export const ILINK_BASE = "https://ilinkai.weixin.qq.com";

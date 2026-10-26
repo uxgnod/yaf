@@ -6,6 +6,7 @@ import { TagInput } from "./TagInput";
 import { SourceGlyph } from "./SourceIcon";
 import { navigate } from "../router";
 import { useTheme } from "../theme";
+import { LICENSE_NAME, SOURCE_URL } from "../project";
 
 const SECTIONS = [
   { path: "/settings/account", icon: "◉", label: "账号与安全" },
@@ -72,6 +73,11 @@ export function Settings({ user, path }: { user: User; path: string }) {
             </div>
           ))}
         </nav>
+        <div className="sidebar-bottom">
+          <a className="source-link muted small" href={SOURCE_URL} target="_blank" rel="noreferrer">
+            源码 · {LICENSE_NAME}
+          </a>
+        </div>
       </aside>
       <main className="main settings-main">
         <div className="topbar">
