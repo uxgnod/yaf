@@ -65,7 +65,7 @@ claude mcp add --transport http yaf https://<你的域名>/mcp --header "Authori
 
 ```bash
 npm install -g yaf-cli          # 或在仓库里：npm run cli:build && node packages/cli/dist/index.js
-yaf login --host https://<你的域名>   # 浏览器确认后自动保存 Token 到 ~/.config/yaf/
+yaf login --host https://<你的域名>   # 浏览器确认后自动保存 Token 到 ~/.config/yaf/；不带 --host 时会询问地址
 echo "想法 #inbox" | yaf add
 yaf search 关键词 --tag inbox
 yaf tags

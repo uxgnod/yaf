@@ -5,8 +5,8 @@ import { homedir, hostname } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { exec } from "node:child_process";
+import { createInterface } from "node:readline/promises";
 
-const DEFAULT_HOST = "https://yaf.uxgnod.workers.dev";
 const CONFIG_DIR = join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "yaf");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
 
@@ -25,7 +25,7 @@ interface Memo {
 const HELP = `yaf — 在终端里记录和搜索 memo
 
 用法：
-  yaf login [--host <url>]         打开浏览器授权，保存 Token
+  yaf login [--host <url>]         打开浏览器授权，保存 Token；第一次登录需填写服务地址
   yaf add [内容]                    新增 memo；不带内容时读取标准输入（支持管道）
   yaf search [关键词] [--tag <t>]   搜索，可加 --limit <n>、--json
   yaf tags                          列出标签和数量
@@ -43,7 +43,7 @@ async function loadConfig(): Promise<Config> {
     /* 没有配置文件 */
   }
   return {
-    host: (process.env.YAF_HOST || file.host || DEFAULT_HOST).replace(/\/+$/, ""),
+    host: normalizeHost(process.env.YAF_HOST || file.host || ""),
     token: process.env.YAF_TOKEN || file.token,
   };
 }
@@ -58,7 +58,37 @@ function die(msg: string): never {
   process.exit(1);
 }
 
+/** 补全协议、去掉末尾斜杠；空字符串表示未设置 */
+function normalizeHost(raw: string): string {
+  const v = raw.trim().replace(/\/+$/, "");
+  if (!v) return "";
+  // 没写协议时默认 https；本机地址默认 http（本地开发）
+  const local = /^(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(v);
+  const withScheme = /^https?:\/\//i.test(v) ? v : `${local ? "http" : "https"}://${v}`;
+  try {
+    const u = new URL(withScheme);
+    return u.origin + u.pathname.replace(/\/+$/, "");
+  } catch {
+    die(`服务地址无效：${raw}`);
+  }
+}
+
+/** 第一次登录且没给 --host 时，在终端里询问服务地址 */
+async function askHost(): Promise<string> {
+  if (!process.stdin.isTTY) die("未设置服务地址，请运行 yaf login --host <你的 yaf 地址>");
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await rl.question("yaf 服务地址（例如 https://yaf.example.workers.dev）：");
+    const host = normalizeHost(answer);
+    if (!host) die("未填写服务地址");
+    return host;
+  } finally {
+    rl.close();
+  }
+}
+
 async function api<T>(cfg: Config, path: string, init: RequestInit = {}): Promise<T> {
+  if (!cfg.host) die("未设置服务地址，请先运行 yaf login --host <你的 yaf 地址>");
   if (!cfg.token) die("未登录，请先运行 yaf login");
   const res = await fetch(cfg.host + "/api" + path, {
     ...init,
@@ -68,7 +98,7 @@ async function api<T>(cfg: Config, path: string, init: RequestInit = {}): Promis
       "X-Yaf-Source": "cli",
       ...init.headers,
     },
-  });
+  }).catch(() => die(`无法连接 ${cfg.host}，请检查网络或重新运行 yaf login --host <地址>`));
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     if (res.status === 401) die(`${data.error ?? "未授权"}，请重新运行 yaf login`);
@@ -117,13 +147,13 @@ function printMemo(m: Memo) {
 async function login(args: string[]) {
   const { values } = parseArgs({ args, options: { host: { type: "string" } } });
   const cfg = await loadConfig();
-  const host = (values.host || cfg.host).replace(/\/+$/, "");
+  const host = normalizeHost(values.host ?? "") || cfg.host || (await askHost());
   const res = await fetch(`${host}/api/device/code`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ client_name: `CLI · ${hostname()}` }),
-  });
-  if (!res.ok) die(`无法连接 ${host}（${res.status}）`);
+  }).catch(() => die(`无法连接 ${host}，请检查地址是否正确`));
+  if (!res.ok) die(`无法连接 ${host}（${res.status}），请检查地址是否正确`);
   const d = (await res.json()) as {
     device_code: string;
     user_code: string;
