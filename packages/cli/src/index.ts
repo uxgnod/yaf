@@ -258,7 +258,8 @@ const commands: Record<string, (args: string[]) => Promise<void>> = {
 };
 
 if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") console.log(HELP);
-else if (cmd === "--version" || cmd === "-v") console.log("0.1.0");
+else if (cmd === "--version" || cmd === "-v")
+  console.log(JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")).version);
 else if (!commands[cmd]) die(`未知命令 ${cmd}\n\n${HELP}`);
 else
   commands[cmd](rest).catch((e) => die(e instanceof Error ? e.message : String(e)));
