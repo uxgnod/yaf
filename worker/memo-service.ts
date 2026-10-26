@@ -2,6 +2,7 @@
 import { extractTags } from "../shared/tags";
 import type { Source } from "./env";
 import { ftsStatements } from "./search";
+import { LENSES, lensByKey } from "./lenses";
 
 export interface MemoRow {
   id: string;
@@ -11,7 +12,17 @@ export interface MemoRow {
   updated_at: number;
   tags: string | null;
   attachments?: string | null;
+  is_private?: number;
+  masked_content?: string | null;
+  judged_rev?: number | null;
+  labels?: string | null;
 }
+
+/** owner：网页会话，能看到全部（隐私 memo 返回遮挡文本）；token：CLI / API / MCP，看不到隐私和还没判定的 memo */
+export type Visibility = "owner" | "token";
+
+/** 隐私 memo 的可公开文本；遮挡还没算出来时整条遮住 */
+export const MASKED_SQL = "(CASE WHEN m.is_private = 1 THEN COALESCE(m.masked_content, '••••') ELSE m.content END)";
 
 export interface Attachment {
   id: string;
@@ -31,10 +42,33 @@ export function escapeLike(s: string): string {
   return s.replace(/[\\%_]/g, (m) => "\\" + m);
 }
 
-export function toMemo(r: MemoRow) {
+/** 卡片上的视图状态：命中的视图、拿不准要问用户的视图 */
+function lensState(r: MemoRow) {
+  const raw = r.labels ? (JSON.parse(r.labels) as Record<string, [number, string]>) : {};
+  const lenses: string[] = [];
+  const ask: string[] = [];
+  for (const lens of LENSES) {
+    if (lens.key === "private") continue; // 由 is_private 表示
+    const v = raw[lens.key];
+    if (!v) continue;
+    const [score, source] = v;
+    if (source === "user") {
+      if (score >= 0.5) lenses.push(lens.key);
+    } else if (score >= lens.threshold) lenses.push(lens.key);
+    else if (lens.ask !== undefined && score >= lens.ask) ask.push(lens.key);
+  }
+  return { lenses, ask };
+}
+
+/** raw = true 时返回原文（只给网页会话的取原文 / 导出原文用） */
+export function toMemo(r: MemoRow, opts: { raw?: boolean } = {}) {
+  const isPrivate = r.is_private === 1;
   return {
     id: r.id,
-    content: r.content,
+    content: isPrivate && !opts.raw ? (r.masked_content ?? "••••") : r.content,
+    private: isPrivate,
+    judged: r.judged_rev != null,
+    ...lensState(r),
     source: r.source,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -43,13 +77,41 @@ export function toMemo(r: MemoRow) {
   };
 }
 
-/** 构造 WHERE 子句：搜索关键词（空格分隔，全部命中）+ 标签（含子标签） */
-export function buildFilter(userId: string, q?: string, tag?: string) {
+/** 视图筛选：private 看 is_private；其他视图看 memo_labels（用户改过的优先） */
+export function lensFilter(key: string): { sql: string; params: unknown[] } | null {
+  const lens = lensByKey(key);
+  if (!lens) return null;
+  if (lens.key === "private") return { sql: "m.is_private = 1", params: [] };
+  return {
+    sql: `EXISTS (SELECT 1 FROM memo_labels l WHERE l.memo_id = m.id AND l.label = ?
+            AND ((l.source = 'user' AND l.score >= 0.5) OR (l.source = 'model' AND l.score >= ?)))`,
+    params: [lens.key, lens.threshold],
+  };
+}
+
+/** Token 看不到隐私和还没判定的 memo */
+export const TOKEN_VISIBLE_SQL = "m.is_private = 0 AND m.judged_rev IS NOT NULL";
+
+/** 构造 WHERE 子句：搜索关键词（空格分隔，全部命中，隐私 memo 只匹配遮挡文本）+ 标签（含子标签）+ 视图 */
+export function buildFilter(
+  userId: string,
+  q?: string,
+  tag?: string,
+  opts: { lens?: string; visibility?: Visibility } = {},
+) {
   const where = ["m.user_id = ?"];
   const params: unknown[] = [userId];
+  if (opts.visibility === "token") where.push(TOKEN_VISIBLE_SQL);
   for (const word of (q ?? "").trim().split(/\s+/).filter(Boolean)) {
-    where.push("m.content LIKE ? ESCAPE '\\'");
+    where.push(`${MASKED_SQL} LIKE ? ESCAPE '\\'`);
     params.push(`%${escapeLike(word)}%`);
+  }
+  if (opts.lens) {
+    const lf = lensFilter(opts.lens);
+    if (lf) {
+      where.push(lf.sql);
+      params.push(...lf.params);
+    }
   }
   const t = tag?.trim().replace(/^#/, "");
   if (t) {
@@ -62,6 +124,8 @@ export function buildFilter(userId: string, q?: string, tag?: string) {
 }
 
 export const SELECT_MEMO = `SELECT m.id, m.content, m.source, m.created_at, m.updated_at,
+  m.is_private, m.masked_content, m.judged_rev,
+  (SELECT json_group_object(label, json_array(score, source)) FROM memo_labels WHERE memo_id = m.id) AS labels,
   (SELECT group_concat(tag, char(31)) FROM memo_tags WHERE memo_id = m.id) AS tags,
   (SELECT json_group_array(json_object('id', a.id, 'kind', a.kind, 'mime', a.mime, 'durationMs', a.duration_ms,
       'description', a.description, 'hasFile', json(CASE WHEN a.r2_key IS NULL THEN 'false' ELSE 'true' END),
@@ -98,10 +162,10 @@ function checkContent(content: unknown, allowEmpty = false): string {
 export async function listMemos(
   db: D1Database,
   userId: string,
-  opts: { q?: string; tag?: string; cursor?: string | null; limit?: number },
+  opts: { q?: string; tag?: string; lens?: string; cursor?: string | null; limit?: number; visibility?: Visibility },
 ) {
   const limit = Math.min(Math.max(opts.limit || 30, 1), 100);
-  const f = buildFilter(userId, opts.q, opts.tag);
+  const f = buildFilter(userId, opts.q, opts.tag, { lens: opts.lens, visibility: opts.visibility });
   if (opts.cursor) {
     // cursor = "<created_at>_<id>"，按 (created_at, id) 倒序翻页
     const [ts, id] = opts.cursor.split("_");
@@ -115,14 +179,23 @@ export async function listMemos(
   const page = results.slice(0, limit);
   const last = page[page.length - 1];
   return {
-    memos: page.map(toMemo),
+    memos: page.map((r) => toMemo(r)),
     nextCursor: results.length > limit && last ? `${last.created_at}_${last.id}` : null,
   };
 }
 
-export async function getMemo(db: D1Database, userId: string, id: string) {
-  const row = await db.prepare(`${SELECT_MEMO} WHERE m.id = ? AND m.user_id = ?`).bind(id, userId).first<MemoRow>();
-  return row ? toMemo(row) : null;
+export async function getMemo(
+  db: D1Database,
+  userId: string,
+  id: string,
+  opts: { visibility?: Visibility; raw?: boolean } = {},
+) {
+  const extra = opts.visibility === "token" ? ` AND ${TOKEN_VISIBLE_SQL}` : "";
+  const row = await db
+    .prepare(`${SELECT_MEMO} WHERE m.id = ? AND m.user_id = ?${extra}`)
+    .bind(id, userId)
+    .first<MemoRow>();
+  return row ? toMemo(row, { raw: opts.raw }) : null;
 }
 
 export async function createMemo(
@@ -142,35 +215,58 @@ export async function createMemo(
     ...tagStatements(db, id, userId, text),
     ...ftsStatements(db, id, userId, text),
   ]);
-  return { id, content: text, source, createdAt: now, updatedAt: now, tags: extractTags(text).sort(), attachments: [] } as Memo;
+  return {
+    id,
+    content: text,
+    private: false,
+    judged: false,
+    lenses: [],
+    ask: [],
+    source,
+    createdAt: now,
+    updatedAt: now,
+    tags: extractTags(text).sort(),
+    attachments: [],
+  } as Memo;
 }
 
 export async function updateMemo(db: D1Database, userId: string, id: string, content: unknown) {
   const existing = await db
     .prepare(
-      "SELECT created_at, source, EXISTS (SELECT 1 FROM attachments WHERE memo_id = m.id) AS has_att FROM memos m WHERE id = ? AND user_id = ?",
+      "SELECT created_at, source, is_private, EXISTS (SELECT 1 FROM attachments WHERE memo_id = m.id) AS has_att FROM memos m WHERE id = ? AND user_id = ?",
     )
     .bind(id, userId)
-    .first<{ created_at: number; source: string; has_att: number }>();
+    .first<{ created_at: number; source: string; is_private: number; has_att: number }>();
   if (!existing) throw new MemoError(404, "不存在");
   const text = checkContent(content, existing.has_att === 1);
   const now = Date.now();
   await db.batch([
     db
-      .prepare("UPDATE memos SET content = ?, updated_at = ?, vector_hash = NULL WHERE id = ? AND user_id = ?")
+      .prepare("UPDATE memos SET content = ?, updated_at = ?, vector_hash = NULL, judged_rev = NULL WHERE id = ? AND user_id = ?")
       .bind(text, now, id, userId),
     ...tagStatements(db, id, userId, text),
-    ...ftsStatements(db, id, userId, text),
+    // 原来是隐私 memo：重新判定前不把原文写进全文索引（保留旧的遮挡文本）
+    ...(existing.is_private ? [] : ftsStatements(db, id, userId, text)),
   ]);
+  const isPrivate = existing.is_private === 1;
   return {
     id,
-    content: text,
+    content: isPrivate ? ((await maskedOf(db, id)) ?? "••••") : text,
+    private: isPrivate,
+    judged: false,
+    lenses: [],
+    ask: [],
     source: existing.source,
     createdAt: existing.created_at,
     updatedAt: now,
     tags: extractTags(text).sort(),
     attachments: await listAttachments(db, id),
   } as Memo;
+}
+
+async function maskedOf(db: D1Database, memoId: string) {
+  const row = await db.prepare("SELECT masked_content FROM memos WHERE id = ?").bind(memoId).first<{ masked_content: string | null }>();
+  return row?.masked_content ?? null;
 }
 
 async function listAttachments(db: D1Database, memoId: string) {
@@ -187,10 +283,11 @@ export async function deleteMemo(db: D1Database, userId: string, id: string): Pr
   const res = await db.batch([
     db.prepare("DELETE FROM memo_tags WHERE memo_id = ? AND user_id = ?").bind(id, userId),
     db.prepare("DELETE FROM memos_fts WHERE memo_id = ? AND user_id = ?").bind(id, userId),
+    db.prepare("DELETE FROM memo_labels WHERE memo_id = ? AND user_id = ?").bind(id, userId),
     db.prepare("DELETE FROM attachments WHERE memo_id = ? AND user_id = ?").bind(id, userId),
     db.prepare("DELETE FROM memos WHERE id = ? AND user_id = ?").bind(id, userId),
   ]);
-  if (!res[3].meta.changes) throw new MemoError(404, "不存在");
+  if (!res[4].meta.changes) throw new MemoError(404, "不存在");
   return files.flatMap((f) => [f.r2_key, f.playback_key]).filter((k): k is string => !!k);
 }
 
@@ -200,4 +297,18 @@ export async function listTags(db: D1Database, userId: string) {
     .bind(userId)
     .all<{ tag: string; count: number }>();
   return results;
+}
+
+/** 各视图的条数（侧栏用） */
+export async function lensCounts(db: D1Database, userId: string) {
+  const out: { key: string; name: string; count: number }[] = [];
+  for (const lens of LENSES) {
+    const lf = lensFilter(lens.key)!;
+    const row = await db
+      .prepare(`SELECT COUNT(*) AS n FROM memos m WHERE m.user_id = ? AND ${lf.sql}`)
+      .bind(userId, ...lf.params)
+      .first<{ n: number }>();
+    out.push({ key: lens.key, name: lens.name, count: row?.n ?? 0 });
+  }
+  return out;
 }

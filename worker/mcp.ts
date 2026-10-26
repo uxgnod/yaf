@@ -38,14 +38,14 @@ function createServer(env: Env, ctx: ExecutionContext, user: User, scopes: Scope
     async ({ query, mode, tag, limit }) => {
       if (!can("memos:read")) return denied("memos:read");
       if (query?.trim()) {
-        const r = await search(env, user.id, { q: query, tag, mode, limit: limit ?? 20 });
+        const r = await search(env, user.id, { q: query, tag, mode, limit: limit ?? 20, visibility: "token" });
         if (!r.memos.length) return text("没有找到匹配的 memo。");
         return text(
           `找到 ${r.memos.length} 条（关键词 ${r.stats.keyword} · 语义 ${r.stats.semantic}）：\n\n` +
             r.memos.map(formatMemo).join("\n\n---\n\n"),
         );
       }
-      const r = await listMemos(env.DB, user.id, { q: query, tag, limit: limit ?? 20 });
+      const r = await listMemos(env.DB, user.id, { q: query, tag, limit: limit ?? 20, visibility: "token" });
       if (!r.memos.length) return text("没有找到匹配的 memo。");
       return text(`找到 ${r.memos.length} 条${r.nextCursor ? "（还有更多）" : ""}：\n\n` + r.memos.map(formatMemo).join("\n\n---\n\n"));
     },
@@ -60,7 +60,7 @@ function createServer(env: Env, ctx: ExecutionContext, user: User, scopes: Scope
     },
     async ({ id }) => {
       if (!can("memos:read")) return denied("memos:read");
-      const m = await getMemo(env.DB, user.id, id);
+      const m = await getMemo(env.DB, user.id, id, { visibility: "token" });
       return m ? text(formatMemo(m)) : fail("memo 不存在");
     },
   );
@@ -97,7 +97,7 @@ function createServer(env: Env, ctx: ExecutionContext, user: User, scopes: Scope
     },
     async ({ id, limit }) => {
       if (!can("memos:read")) return denied("memos:read");
-      const list = await related(env, user.id, id, limit ?? 5);
+      const list = await related(env, user.id, id, limit ?? 5, "token");
       if (!list.length) return text("没有找到相关的 memo（可能还没有建立语义索引）。");
       return text(list.map((m) => `相似度 ${m.score}\n${formatMemo(m)}`).join("\n\n---\n\n"));
     },

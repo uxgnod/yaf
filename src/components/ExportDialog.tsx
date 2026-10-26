@@ -10,6 +10,7 @@ interface Props {
 export function ExportDialog({ tags, defaultTag, onClose }: Props) {
   const [tag, setTag] = useState(defaultTag ?? "");
   const [format, setFormat] = useState<"md" | "json">("md");
+  const [raw, setRaw] = useState(false);
 
   // 父级标签也可单独导出（会包含所有子标签）
   const allPaths = [...new Set(tags.flatMap(({ tag }) => tag.split("/").map((_, i, a) => a.slice(0, i + 1).join("/"))))].sort();
@@ -34,9 +35,13 @@ export function ExportDialog({ tags, defaultTag, onClose }: Props) {
           <button className={format === "md" ? "on" : ""} onClick={() => setFormat("md")}>Markdown</button>
           <button className={format === "json" ? "on" : ""} onClick={() => setFormat("json")}>JSON</button>
         </div>
+        <label className="check">
+          <input type="checkbox" checked={raw} onChange={(e) => setRaw(e.target.checked)} />
+          <span>包含隐私原文</span>
+        </label>
         <div className="dialog-actions">
           <button className="btn btn-ghost" onClick={onClose}>取消</button>
-          <a className="btn btn-primary" href={api.exportUrl({ tag: tag || undefined, format })} onClick={onClose}>
+          <a className="btn btn-primary" href={api.exportUrl({ tag: tag || undefined, format, private: raw ? "raw" : undefined })} onClick={onClose}>
             下载
           </a>
         </div>

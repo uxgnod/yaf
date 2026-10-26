@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import type { Stats, TagCount, User } from "../api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { LensCount, Stats, TagCount, User } from "../api";
 import { navigate } from "../router";
 
 interface TagNode {
@@ -101,12 +101,57 @@ function Heatmap({ data }: { data: Stats["heatmap"] }) {
   );
 }
 
+const LENS_ICON: Record<string, string> = { todo: "☑", private: "⚿" };
+
+const THEME_LABEL: Record<string, string> = { system: "跟随系统", light: "亮色", dark: "暗色" };
+
+/** 底部账户菜单：主题、设置、导出，分隔线下是退出登录 */
+function AccountMenu({ user, onExport, onLogout, theme, onToggleTheme }: Pick<Props, "user" | "onExport" | "onLogout" | "theme" | "onToggleTheme">) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+  const pick = (fn: () => void) => () => {
+    setOpen(false);
+    fn();
+  };
+  return (
+    <div className="account" ref={ref}>
+      {open && (
+        <div className="menu account-menu" role="menu">
+          <button role="menuitem" onClick={onToggleTheme}>
+            主题<span className="menu-value">{THEME_LABEL[theme] ?? theme}</span>
+          </button>
+          <button role="menuitem" onClick={pick(() => navigate("/settings/account"))}>设置</button>
+          <button role="menuitem" onClick={pick(onExport)}>导出</button>
+          <div className="menu-sep" />
+          <button role="menuitem" onClick={pick(onLogout)}>退出登录</button>
+        </div>
+      )}
+      <button className={"account-btn" + (open ? " open" : "")} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <span className="avatar">{(user.name || user.email)[0].toUpperCase()}</span>
+        <span className="user-name" title={user.email}>{user.name || user.email}</span>
+        <span className="account-caret">⌃</span>
+      </button>
+    </div>
+  );
+}
+
 interface Props {
   user: User;
   stats: Stats | null;
   tags: TagCount[];
+  lenses: LensCount[];
   /** undefined：当前不在笔记列表页，任何标签都不高亮 */
   activeTag: string | null | undefined;
+  activeLens: string | null;
+  onSelectLens: (lens: string) => void;
   view: "memos" | "insights";
   unreadInsights: number;
   onSelectTag: (tag: string | null) => void;
@@ -116,21 +161,11 @@ interface Props {
   onToggleTheme: () => void;
 }
 
-export function Sidebar({ user, stats, tags, activeTag, view, unreadInsights, onSelectTag, onExport, onLogout, theme, onToggleTheme }: Props) {
+export function Sidebar(props: Props) {
+  const { stats, tags, lenses, activeTag, activeLens, onSelectLens, view, unreadInsights, onSelectTag } = props;
   const tree = useMemo(() => buildTree(tags), [tags]);
   return (
     <aside className="sidebar">
-      <div className="sidebar-top">
-        <div className="user">
-          <span className="avatar">{(user.name || user.email)[0].toUpperCase()}</span>
-          <span className="user-name" title={user.email}>{user.name || user.email}</span>
-          {user.role === "admin" && <span className="badge">admin</span>}
-        </div>
-        <button className="icon-btn" onClick={onToggleTheme} title={`主题：${theme}`}>
-          {theme === "dark" ? "☾" : theme === "light" ? "☀" : "◐"}
-        </button>
-      </div>
-
       {stats && (
         <>
           <div className="stats">
@@ -143,20 +178,28 @@ export function Sidebar({ user, stats, tags, activeTag, view, unreadInsights, on
       )}
 
       <nav className="nav">
-        <div className={"nav-item" + (activeTag === null ? " active" : "")} onClick={() => onSelectTag(null)}>
+        <div className={"nav-item" + (activeTag === null && !activeLens ? " active" : "")} onClick={() => onSelectTag(null)}>
           <span className="nav-icon">▤</span> 全部笔记
         </div>
         <div className={"nav-item" + (view === "insights" ? " active" : "")} onClick={() => navigate("/insights")}>
           <span className="nav-icon">✦</span> 洞察
           {unreadInsights > 0 && <span className="new-badge">{unreadInsights} 新</span>}
         </div>
-        <div className="nav-item" onClick={onExport}>
-          <span className="nav-icon">⤓</span> 导出
-        </div>
-        <div className="nav-item" onClick={() => navigate("/settings/account")}>
-          <span className="nav-icon">⚙</span> 设置
-        </div>
       </nav>
+
+      {lenses.length > 0 && (
+        <>
+          <div className="section-title">视图</div>
+          <nav className="nav" aria-label="视图">
+            {lenses.map((l) => (
+              <div key={l.key} className={"nav-item" + (activeLens === l.key ? " active" : "")} onClick={() => onSelectLens(l.key)}>
+                <span className="nav-icon">{LENS_ICON[l.key] ?? "◇"}</span> {l.name}
+                {l.count > 0 && <span className="count">{l.count}</span>}
+              </div>
+            ))}
+          </nav>
+        </>
+      )}
 
       <div className="section-title">全部标签</div>
       <ul className="tag-tree">
@@ -167,7 +210,7 @@ export function Sidebar({ user, stats, tags, activeTag, view, unreadInsights, on
       </ul>
 
       <div className="sidebar-bottom">
-        <button className="btn btn-ghost btn-sm" onClick={onLogout}>退出登录</button>
+        <AccountMenu {...props} />
       </div>
     </aside>
   );

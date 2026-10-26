@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, type MemoHit, type SearchMode, type SearchSort, type SearchStats, type Stats, type TagCount, type User } from "../api";
+import { api, type LensCount, type Memo, type MemoHit, type SearchMode, type SearchSort, type SearchStats, type Stats, type TagCount, type User } from "../api";
 import { queryTerms } from "../../shared/segment";
 import { Editor } from "./Editor";
 import { MemoCard } from "./MemoCard";
@@ -15,6 +15,15 @@ function readTagFromHash(): string | null {
   return m ? decodeURIComponent(m[1]) : null;
 }
 
+/** 视图筛选：#lens=todo */
+function readLensFromHash(): string | null {
+  const m = location.hash.match(/^#lens=(.+)$/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+/** 判定在后台进行（通常 1–2 秒），之后取回这条 memo 更新视图标记 */
+const JUDGE_POLL_MS = [2500, 6000];
+
 export function Home({ user, path, view, onLogout }: { user: User; path: string; view: "memos" | "insights"; onLogout: () => void }) {
   const [unreadInsights, setUnreadInsights] = useState(0);
   const [memos, setMemos] = useState<MemoHit[]>([]);
@@ -25,6 +34,8 @@ export function Home({ user, path, view, onLogout }: { user: User; path: string;
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [tag, setTag] = useState<string | null>(readTagFromHash);
+  const [lens, setLens] = useState<string | null>(readLensFromHash);
+  const [lenses, setLenses] = useState<LensCount[]>([]);
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [tags, setTags] = useState<TagCount[]>([]);
@@ -36,7 +47,10 @@ export function Home({ user, path, view, onLogout }: { user: User; path: string;
   const sentinel = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const onHash = () => setTag(readTagFromHash());
+    const onHash = () => {
+      setTag(readTagFromHash());
+      setLens(readLensFromHash());
+    };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
@@ -48,6 +62,7 @@ export function Home({ user, path, view, onLogout }: { user: User; path: string;
 
   const refreshMeta = useCallback(() => {
     api.tags().then((r) => setTags(r.tags));
+    api.lenses().then((r) => setLenses(r.lenses), () => {});
     api.stats().then(setStats);
     api.listInsights().then((r) => setUnreadInsights(r.unread), () => {});
   }, []);
@@ -60,6 +75,7 @@ export function Home({ user, path, view, onLogout }: { user: User; path: string;
         const r = await api.listMemos({
           q: debounced,
           tag: tag ?? undefined,
+          lens: lens ?? undefined,
           cursor: reset ? null : from,
           ...(debounced ? { mode, sort } : {}),
         });
@@ -71,7 +87,7 @@ export function Home({ user, path, view, onLogout }: { user: User; path: string;
         if (id === reqId.current) setLoading(false);
       }
     },
-    [debounced, tag, mode, sort],
+    [debounced, tag, lens, mode, sort],
   );
 
   // ⌘K / Ctrl+K 聚焦搜索框
@@ -112,20 +128,57 @@ export function Home({ user, path, view, onLogout }: { user: User; path: string;
     if (t) location.hash = `tag=${encodeURIComponent(t)}`;
     else history.replaceState(null, "", location.pathname + location.search);
     setTag(t);
+    setLens(null);
+  }
+
+  function selectLens(l: string) {
+    setSidebarOpen(false);
+    if (view !== "memos") navigate("/");
+    location.hash = `lens=${encodeURIComponent(l)}`;
+    setLens(l);
+    setTag(null);
+  }
+
+  const replaceMemo = useCallback((memo: Memo) => {
+    setMemos((prev) => prev.map((m) => (m.id === memo.id ? { ...m, ...memo } : m)));
+  }, []);
+
+  /** 刚写入 / 编辑的 memo 还没判定：稍后取回，更新标记和侧栏条数 */
+  const followJudge = useCallback(
+    (id: string) => {
+      for (const ms of JUDGE_POLL_MS) {
+        setTimeout(async () => {
+          const { memo } = await api.getMemo(id).catch(() => ({ memo: null }));
+          if (memo) {
+            replaceMemo(memo);
+            if (memo.judged) api.lenses().then((r) => setLenses(r.lenses), () => {});
+          }
+        }, ms);
+      }
+    },
+    [replaceMemo],
+  );
+
+  async function setLabel(id: string, label: string, value: boolean) {
+    const { memo } = await api.setLabel(id, label, value);
+    replaceMemo(memo);
+    api.lenses().then((r) => setLenses(r.lenses), () => {});
   }
 
   async function create(content: string) {
     const { memo } = await api.createMemo(content);
     // 新 memo 若不符合当前筛选，则重新加载；否则直接插入顶部
-    if (debounced || tag) load(true, null);
+    if (debounced || tag || lens) load(true, null);
     else setMemos((prev) => [memo, ...prev]);
     refreshMeta();
+    followJudge(memo.id);
   }
 
   async function update(id: string, content: string) {
     const { memo } = await api.updateMemo(id, content);
     setMemos((prev) => prev.map((m) => (m.id === id ? memo : m)));
     refreshMeta();
+    followJudge(id);
   }
 
   async function remove(id: string) {
@@ -141,7 +194,10 @@ export function Home({ user, path, view, onLogout }: { user: User; path: string;
         user={user}
         stats={stats}
         tags={tags}
+        lenses={lenses}
         activeTag={view === "memos" ? tag : undefined}
+        activeLens={view === "memos" ? lens : null}
+        onSelectLens={selectLens}
         view={view}
         unreadInsights={unreadInsights}
         onSelectTag={selectTag}
@@ -158,7 +214,12 @@ export function Home({ user, path, view, onLogout }: { user: User; path: string;
             <div className="topbar">
               <button className="icon-btn menu-toggle" onClick={() => setSidebarOpen(true)} aria-label="菜单">☰</button>
               <div className="title">
-                {tag ? (
+                {lens ? (
+                  <>
+                    {lenses.find((l) => l.key === lens)?.name ?? lens}
+                    <button className="chip-clear" onClick={() => selectTag(null)} title="清除筛选">×</button>
+                  </>
+                ) : tag ? (
                   <>
                     <span className="hash">#</span>
                     {tag}
@@ -216,10 +277,10 @@ export function Home({ user, path, view, onLogout }: { user: User; path: string;
 
             <div className="memo-list">
               {memos.map((m) => (
-                <MemoCard key={m.id} memo={m} terms={terms} onUpdate={update} onDelete={remove} />
+                <MemoCard key={m.id} memo={m} terms={terms} onUpdate={update} onDelete={remove} onLabel={setLabel} />
               ))}
               {!loading && memos.length === 0 && (
-                <div className="empty muted">{debounced || tag ? "没有匹配的 memo" : "还没有 memo，写下第一条吧"}</div>
+                <div className="empty muted">{debounced || tag || lens ? "没有匹配的 memo" : "还没有 memo，写下第一条吧"}</div>
               )}
               <div ref={sentinel} />
               {loading && <div className="empty muted small">加载中…</div>}

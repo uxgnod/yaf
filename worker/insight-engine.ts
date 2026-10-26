@@ -92,7 +92,8 @@ function clip(s: string, n = MEMO_CHARS) {
 }
 
 export async function gatherMaterial(env: Env, userId: string, plan: PlanConfig, periodStart: number, periodEnd: number) {
-  const where = ["m.user_id = ?", "m.created_at >= ?", "m.created_at < ?"];
+  // 隐私 memo 不进洞察材料
+  const where = ["m.user_id = ?", "m.is_private = 0", "m.created_at >= ?", "m.created_at < ?"];
   const params: unknown[] = [userId, periodStart, periodEnd];
   if (plan.scopeTags.length) {
     where.push(
@@ -138,7 +139,7 @@ export async function gatherMaterial(env: Env, userId: string, plan: PlanConfig,
     const { results: rows } = await env.DB.prepare(
       `SELECT m.id, m.content, m.created_at,
               (SELECT group_concat(tag, char(31)) FROM memo_tags WHERE memo_id = m.id) AS tags
-         FROM memos m WHERE m.user_id = ? AND m.created_at < ? AND m.id IN (${historyIds.map(() => "?").join(",")})
+         FROM memos m WHERE m.user_id = ? AND m.is_private = 0 AND m.created_at < ? AND m.id IN (${historyIds.map(() => "?").join(",")})
         ORDER BY m.created_at`,
     )
       .bind(userId, periodStart, ...historyIds)

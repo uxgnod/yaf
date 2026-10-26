@@ -17,7 +17,8 @@ export class IndexWorkflow extends WorkflowEntrypoint<Env, { userId: string }> {
         async () => {
           const { results } = await this.env.DB.prepare(
             `SELECT id, user_id, content, created_at FROM memos
-              WHERE user_id = ? AND vector_hash IS NULL ORDER BY created_at LIMIT ?`,
+              WHERE user_id = ? AND vector_hash IS NULL AND judged_rev IS NOT NULL AND is_private = 0
+              ORDER BY created_at LIMIT ?`,
           )
             .bind(userId, BATCH)
             .all<{ id: string; user_id: string; content: string; created_at: number }>();

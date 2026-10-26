@@ -7,6 +7,20 @@ export interface Memo {
   /** web | wechat | api | mcp | cli */
   source: string;
   attachments?: Attachment[];
+  /** 隐私 memo：content 是遮挡后的文本，原文用 api.rawMemo 取 */
+  private?: boolean;
+  /** 是否已经判定过视图 */
+  judged?: boolean;
+  /** 命中的视图（不含 private） */
+  lenses?: string[];
+  /** 拿不准、要问用户的视图 */
+  ask?: string[];
+}
+
+export interface LensCount {
+  key: string;
+  name: string;
+  count: number;
 }
 
 export interface Attachment {
@@ -208,7 +222,7 @@ export const api = {
     request("/auth/login", { method: "POST", body: json({ email, password }) }),
   logout: () => request("/auth/logout", { method: "POST" }),
 
-  listMemos: (params: { q?: string; tag?: string; cursor?: string | null; mode?: SearchMode; sort?: SearchSort }) =>
+  listMemos: (params: { q?: string; tag?: string; lens?: string; cursor?: string | null; mode?: SearchMode; sort?: SearchSort }) =>
     request<{ memos: MemoHit[]; nextCursor: string | null; stats?: SearchStats }>(`/memos${qs(params)}`),
   related: (id: string) => request<{ memos: (Memo & { score: number })[] }>(`/memos/${id}/related`),
   searchStatus: () => request<IndexStatus>("/search/status"),
@@ -217,6 +231,10 @@ export const api = {
   updateMemo: (id: string, content: string) =>
     request<{ memo: Memo }>(`/memos/${id}`, { method: "PATCH", body: json({ content }) }),
   deleteMemo: (id: string) => request(`/memos/${id}`, { method: "DELETE" }),
+  rawMemo: (id: string) => request<{ content: string }>(`/memos/${id}/raw`),
+  setLabel: (id: string, label: string, value: boolean) =>
+    request<{ memo: Memo }>(`/memos/${id}/labels/${label}`, { method: "PUT", body: json({ value }) }),
+  lenses: () => request<{ lenses: LensCount[] }>("/lenses"),
   tags: () => request<{ tags: TagCount[] }>("/tags"),
   stats: () => request<Stats>(`/stats?tz=${new Date().getTimezoneOffset()}`),
   changePassword: (current: string, next: string) =>
@@ -265,5 +283,5 @@ export const api = {
   wechatUnbind: () => request("/wechat", { method: "DELETE" }),
   attachmentUrl: (id: string, playback = false) => `/api/attachments/${id}${playback ? "?playback=1" : ""}`,
 
-  exportUrl: (params: { tag?: string; format: "md" | "json" }) => `/api/export${qs(params)}`,
+  exportUrl: (params: { tag?: string; format: "md" | "json"; private?: "raw" }) => `/api/export${qs(params)}`,
 };

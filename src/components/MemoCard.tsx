@@ -11,6 +11,17 @@ interface Props {
   terms?: string[];
   onUpdate: (id: string, content: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  /** 用户手动改视图标记 */
+  onLabel: (id: string, label: string, value: boolean) => Promise<void>;
+}
+
+const REVEAL_SECONDS = 30;
+/** 刚写入 / 编辑后多久内显示「判定中…」 */
+const JUDGING_HINT_MS = 2 * 60_000;
+
+/** 遮挡后是否还剩可以搜索的文字 */
+function hasSearchableText(masked: string) {
+  return masked.replace(/•+/g, "").replace(/[\s:：=*+#\-]/g, "") !== "";
 }
 
 function formatTime(ts: number) {
@@ -19,11 +30,45 @@ function formatTime(ts: number) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
-export function MemoCard({ memo, terms = [], onUpdate, onDelete }: Props) {
+export function MemoCard({ memo, terms = [], onUpdate, onDelete, onLabel }: Props) {
   const [editing, setEditing] = useState(false);
+  const [editInitial, setEditInitial] = useState(memo.content);
   const [menu, setMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const html = useMemo(() => renderMarkdown(memo.content, terms), [memo.content, terms]);
+  /** 隐私 memo 显示原文时的原文和剩余秒数 */
+  const [raw, setRaw] = useState<string | null>(null);
+  const [left, setLeft] = useState(0);
+  const [title, setTitle] = useState("");
+  const shown = raw ?? memo.content;
+  const html = useMemo(() => renderMarkdown(shown, terms), [shown, terms]);
+
+  useEffect(() => setRaw(null), [memo.content]);
+  useEffect(() => {
+    if (raw === null) return;
+    if (left <= 0) return setRaw(null);
+    const t = setTimeout(() => setLeft((n) => n - 1), 1000);
+    return () => clearTimeout(t);
+  }, [raw, left]);
+
+  async function reveal() {
+    const r = await api.rawMemo(memo.id);
+    setRaw(r.content);
+    setLeft(REVEAL_SECONDS);
+  }
+
+  /** 隐私 memo 编辑时用原文 */
+  async function startEdit() {
+    setEditInitial(memo.private ? (raw ?? (await api.rawMemo(memo.id)).content) : memo.content);
+    setEditing(true);
+  }
+
+  async function saveTitle() {
+    const t = title.trim();
+    if (!t) return;
+    const original = (await api.rawMemo(memo.id)).content;
+    await onUpdate(memo.id, `${t}\n${original}`);
+    setTitle("");
+  }
 
   useEffect(() => {
     if (!menu) return;
@@ -38,7 +83,7 @@ export function MemoCard({ memo, terms = [], onUpdate, onDelete }: Props) {
     return (
       <div className="memo-card editing">
         <Editor
-          initial={memo.content}
+          initial={editInitial}
           allowEmpty={Boolean(memo.attachments?.length)}
           submitLabel="保存"
           autoFocus
@@ -61,11 +106,25 @@ export function MemoCard({ memo, terms = [], onUpdate, onDelete }: Props) {
             {formatTime(memo.createdAt)}
           </time>
           <SourceIcon source={memo.source} />
+          {memo.private && <span className="lens-chip lens-private">隐私</span>}
+          {memo.lenses?.includes("todo") && (
+            <span className="lens-chip">
+              待办
+              <button aria-label="不是待办" title="不是待办" onClick={() => onLabel(memo.id, "todo", false)}>×</button>
+            </span>
+          )}
+          {memo.judged === false && Date.now() - memo.updatedAt < JUDGING_HINT_MS && <span className="muted small">判定中…</span>}
           {memo.match?.keywordRank && <span className="hit-badge hit-keyword">关键词</span>}
           {memo.match?.semanticScore && (
             <span className="hit-badge hit-semantic" title="语义相似度（cosine）">语义 {memo.match.semanticScore.toFixed(2)}</span>
           )}
         </div>
+        <div className="head-actions">
+        {memo.private && (
+          <button className="btn btn-ghost btn-sm" onClick={raw === null ? reveal : () => setRaw(null)}>
+            {raw === null ? "显示原文" : `隐藏 · ${left}s`}
+          </button>
+        )}
         <div className="menu-wrap" ref={menuRef}>
           <button className="icon-btn" onClick={() => setMenu((v) => !v)} aria-label="更多">
             ···
@@ -75,7 +134,7 @@ export function MemoCard({ memo, terms = [], onUpdate, onDelete }: Props) {
               <button
                 onClick={() => {
                   setMenu(false);
-                  setEditing(true);
+                  startEdit();
                 }}
               >
                 编辑
@@ -83,10 +142,18 @@ export function MemoCard({ memo, terms = [], onUpdate, onDelete }: Props) {
               <button
                 onClick={() => {
                   setMenu(false);
-                  navigator.clipboard.writeText(memo.content);
+                  navigator.clipboard.writeText(shown);
                 }}
               >
                 复制 Markdown
+              </button>
+              <button
+                onClick={() => {
+                  setMenu(false);
+                  onLabel(memo.id, "private", !memo.private);
+                }}
+              >
+                {memo.private ? "取消隐私" : "标记为隐私"}
               </button>
               <button
                 className="danger"
@@ -100,12 +167,30 @@ export function MemoCard({ memo, terms = [], onUpdate, onDelete }: Props) {
             </div>
           )}
         </div>
+        </div>
       </header>
-      {memo.content.trim() && (
-        <div className="markdown" dangerouslySetInnerHTML={{ __html: html }} onDoubleClick={() => setEditing(true)} />
+      {shown.trim() && <div className="markdown" dangerouslySetInnerHTML={{ __html: html }} onDoubleClick={startEdit} />}
+      {memo.private && raw === null && !hasSearchableText(memo.content) && (
+        <form
+          className="title-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            saveTitle();
+          }}
+        >
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="添加标题，方便搜索" aria-label="标题" />
+          <button className="btn btn-ghost btn-sm" disabled={!title.trim()}>保存</button>
+        </form>
       )}
       {memo.attachments && memo.attachments.length > 0 && <Attachments list={memo.attachments} />}
-      <Related memoId={memo.id} />
+      {memo.ask?.includes("todo") && (
+        <div className="lens-ask small muted">
+          这是待办吗？
+          <button className="btn btn-ghost btn-sm" onClick={() => onLabel(memo.id, "todo", true)}>是</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => onLabel(memo.id, "todo", false)}>不是</button>
+        </div>
+      )}
+      {!memo.private && <Related memoId={memo.id} />}
     </article>
   );
 }

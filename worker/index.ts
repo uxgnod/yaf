@@ -5,6 +5,7 @@ import { memos } from "./memos";
 import { tokens } from "./tokens";
 import { handleMcp } from "./mcp";
 import { backfillAll } from "./search";
+import { judgeBackfill } from "./judge";
 import { insights, runDuePlans } from "./insights";
 import { wechat } from "./wechat/routes";
 import { autoTags } from "./auto-tags";
@@ -30,7 +31,8 @@ export default {
     return app.fetch(request, env, ctx);
   },
   async scheduled(_controller, env, ctx) {
-    ctx.waitUntil(Promise.allSettled([runDuePlans(env), backfillAll(env)]));
+    // 先判定视图，再补算向量（向量只给已判定、非隐私的 memo）
+    ctx.waitUntil(Promise.allSettled([runDuePlans(env), judgeBackfill(env).then(() => backfillAll(env))]));
   },
 } satisfies ExportedHandler<Env>;
 

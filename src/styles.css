@@ -259,7 +259,7 @@ label input:focus, label select:focus { border-color: var(--accent); box-shadow:
 .section-title { font-size: 11px; font-weight: 500; color: var(--muted); padding: 0 8px; margin-bottom: -8px; }
 .tag-tree, .tag-tree ul { list-style: none; margin: 0; padding: 0; }
 .tag-item .caret {
-  width: 12px; font-size: 10px; color: var(--muted);
+  width: 16px; height: 20px; margin-left: -2px; font-size: 13px; line-height: 20px; color: var(--muted);
   transition: transform 0.12s; display: inline-block; text-align: center;
 }
 .tag-item .caret.open { transform: rotate(90deg); }
@@ -269,7 +269,18 @@ label input:focus, label select:focus { border-color: var(--accent); box-shadow:
 .tag-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tag-item .count { font-size: 11px; color: var(--muted); }
 .empty-tags { padding: 4px 8px; }
-.sidebar-bottom { margin-top: auto; }
+.sidebar-bottom { margin-top: auto; display: flex; align-items: center; gap: 8px; }
+.nav .count { margin-left: auto; font-size: 11px; color: var(--muted); }
+.account { position: relative; flex: 1; min-width: 0; }
+.account-btn {
+  width: 100%; height: 34px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent;
+  display: flex; align-items: center; gap: 8px; font: inherit; font-size: 13px; font-weight: 500; color: var(--text); cursor: pointer;
+}
+.account-btn:hover, .account-btn.open { background: var(--surface-hover); }
+.account-caret { margin-left: auto; color: var(--muted); font-size: 11px; }
+.menu.account-menu { top: auto; bottom: 40px; left: 0; right: auto; min-width: 200px; }
+.menu-value { float: right; color: var(--muted); font-size: 12px; }
+.menu-sep { height: 1px; margin: 4px 0; background: var(--border); }
 .source-link { display: inline-block; padding: 6px 8px; color: var(--muted); text-decoration: none; }
 .source-link:hover { color: var(--text-2); text-decoration: underline; }
 
@@ -409,6 +420,20 @@ label input:focus, label select:focus { border-color: var(--accent); box-shadow:
 
 /* ---------- v2：来源标记 ---------- */
 .memo-meta { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.head-actions { display: flex; align-items: center; gap: 6px; }
+.lens-chip {
+  display: inline-flex; align-items: center; gap: 2px; height: 20px; padding: 0 6px; border-radius: 4px;
+  background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 500;
+}
+.lens-chip button { border: 0; background: transparent; color: inherit; cursor: pointer; padding: 0 2px; font-size: 12px; line-height: 1; }
+.lens-chip.lens-private { background: var(--surface-hover); color: var(--text-2); }
+.lens-ask { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.title-form { display: flex; gap: 8px; margin-top: 10px; }
+.title-form input {
+  flex: 1; min-width: 0; height: 28px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text); font: inherit; font-size: 13px; outline: none;
+}
+.title-form input:focus { border-color: var(--accent); }
 .source-icon {
   position: relative; display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center;
   border-radius: 4px; color: var(--muted); opacity: 0.8; outline: none;
