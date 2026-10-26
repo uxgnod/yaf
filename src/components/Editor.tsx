@@ -6,6 +6,8 @@ interface Props {
   submitLabel?: string;
   autoFocus?: boolean;
   onSubmit: (content: string) => Promise<void>;
+  /** 带附件的 memo 允许清空正文 */
+  allowEmpty?: boolean;
   onCancel?: () => void;
 }
 
@@ -37,7 +39,7 @@ function applyFormat(el: HTMLTextAreaElement, kind: "bold" | "list" | "ordered" 
   return next;
 }
 
-export function Editor({ initial = "", placeholder = "现在的想法是…", submitLabel = "发送", autoFocus, onSubmit, onCancel }: Props) {
+export function Editor({ initial = "", placeholder = "现在的想法是…", submitLabel = "发送", autoFocus, allowEmpty, onSubmit, onCancel }: Props) {
   const [value, setValue] = useState(initial);
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -59,7 +61,7 @@ export function Editor({ initial = "", placeholder = "现在的想法是…", su
   }, [autoFocus]);
 
   async function submit() {
-    if (!value.trim() || busy) return;
+    if ((!value.trim() && !allowEmpty) || busy) return;
     setBusy(true);
     try {
       await onSubmit(value);
@@ -104,7 +106,7 @@ export function Editor({ initial = "", placeholder = "现在的想法是…", su
           {onCancel && (
             <button type="button" className="btn btn-ghost" onClick={onCancel}>取消</button>
           )}
-          <button type="button" className="btn btn-primary" disabled={!value.trim() || busy} onClick={submit}>
+          <button type="button" className="btn btn-primary" disabled={(!value.trim() && !allowEmpty) || busy} onClick={submit}>
             {submitLabel}
           </button>
         </div>

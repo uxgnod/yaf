@@ -76,10 +76,14 @@ export async function indexMemos(env: Env, rows: IndexRow[]) {
   const extra = new Map<string, string>();
   for (const a of atts) extra.set(a.memo_id, `${extra.get(a.memo_id) ?? ""}\n${a.description}`);
   const texts = rows.map((r) => embedText(r.content + (extra.get(r.id) ?? "")));
-  const vectors = await embed(env, texts);
-  await env.VECTORS.upsert(
-    rows.map((r, i) => ({ id: r.id, values: vectors[i], metadata: { userId: r.user_id, createdAt: r.created_at } })),
-  );
+  // 没有任何文字的 memo（如没有转写的语音）不算向量，但照样标记为已索引，避免补算任务反复重试
+  const withText = rows.map((_, i) => i).filter((i) => texts[i].trim());
+  if (withText.length) {
+    const vectors = await embed(env, withText.map((i) => texts[i]));
+    await env.VECTORS.upsert(
+      withText.map((i, k) => ({ id: rows[i].id, values: vectors[k], metadata: { userId: rows[i].user_id, createdAt: rows[i].created_at } })),
+    );
+  }
   const hashes = await Promise.all(texts.map((t) => sha256(t)));
   await env.DB.batch(
     rows.flatMap((r, i) => [

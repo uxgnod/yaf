@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { AppEnv, Env } from "../env";
 import { requireScope, requireUser } from "../auth";
 import { seal } from "../lib/secret-box";
+import { cleanTags } from "../auto-tags";
 import { DEFAULT_RULES, notifyStop, type WechatRules } from "./bridge";
 import { getQrCode, getQrStatus, notify } from "./protocol";
 
@@ -148,7 +149,14 @@ wechat.patch("/wechat/rules", requireUser, async (c) => {
   const r = await load(c.env, userId);
   if (!r) return c.json({ error: "还没有连接微信" }, 404);
   const rules: WechatRules = { ...DEFAULT_RULES, ...JSON.parse(r.rules || "{}") };
-  for (const k of Object.keys(DEFAULT_RULES) as (keyof WechatRules)[]) if (typeof body[k] === "boolean") rules[k] = body[k]!;
+  for (const k of ["autoTag", "keepAudio", "replyConfirm", "mergeWindow"] as const) {
+    if (typeof body[k] === "boolean") rules[k] = body[k];
+  }
+  if (body.autoTags !== undefined) {
+    const tags = cleanTags(body.autoTags);
+    if (!tags.length) return c.json({ error: "至少保留一个标签" }, 400);
+    rules.autoTags = tags;
+  }
   await c.env.DB.prepare("UPDATE wechat_bindings SET rules = ? WHERE user_id = ?").bind(JSON.stringify(rules), userId).run();
   return c.json({ rules });
 });

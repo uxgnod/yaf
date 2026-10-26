@@ -1,7 +1,6 @@
 // 微信图片 / 语音：下载 → AES-128-ECB 解密 → 存 R2（若已绑定）→ 图片描述 → 记录附件。
 import { ecb } from "@noble/ciphers/aes.js";
 import type { Env } from "../env";
-import { updateMemo } from "../memo-service";
 import { downloadMedia, hexToB64, ItemType, parseAesKey, type CdnMedia, type MessageItem } from "./protocol";
 
 // 实测免费套餐可用、能读中文提示的视觉模型
@@ -52,7 +51,7 @@ export async function saveMedia(
   userId: string,
   memoId: string,
   items: MessageItem[],
-  opts: { keepAudio: boolean; transcribe: boolean },
+  opts: { keepAudio: boolean },
 ) {
   for (const it of items) {
     const attId = crypto.randomUUID();
@@ -90,11 +89,6 @@ export async function saveMedia(
       )
         .bind(attId, memoId, userId, r2Key, size, v.playtime ?? null, text, Date.now())
         .run();
-      if (opts.transcribe && !text) {
-        // 微信没有给转写：SILK 需要先解码成 wav 才能交给 Whisper，Workers 上暂不支持，先标记出来
-        const memo = await env.DB.prepare("SELECT content FROM memos WHERE id = ?").bind(memoId).first<{ content: string }>();
-        if (memo) await updateMemo(env.DB, userId, memoId, memo.content.replace("[语音] 转写中…", "[语音]（微信未提供转写）"));
-      }
     }
   }
 }

@@ -87,9 +87,10 @@ export class MemoError extends Error {
   }
 }
 
-function checkContent(content: unknown): string {
+/** allowEmpty：带附件的 memo（如微信纯图片、无转写的语音）正文可以为空 */
+function checkContent(content: unknown, allowEmpty = false): string {
   const text = String(content ?? "").trim();
-  if (!text) throw new MemoError(400, "内容不能为空");
+  if (!text && !allowEmpty) throw new MemoError(400, "内容不能为空");
   if (text.length > MAX_LEN) throw new MemoError(400, "内容过长");
   return text;
 }
@@ -124,8 +125,14 @@ export async function getMemo(db: D1Database, userId: string, id: string) {
   return row ? toMemo(row) : null;
 }
 
-export async function createMemo(db: D1Database, userId: string, content: unknown, source: Source) {
-  const text = checkContent(content);
+export async function createMemo(
+  db: D1Database,
+  userId: string,
+  content: unknown,
+  source: Source,
+  opts: { allowEmpty?: boolean } = {},
+) {
+  const text = checkContent(content, opts.allowEmpty);
   const id = crypto.randomUUID();
   const now = Date.now();
   await db.batch([
@@ -139,12 +146,14 @@ export async function createMemo(db: D1Database, userId: string, content: unknow
 }
 
 export async function updateMemo(db: D1Database, userId: string, id: string, content: unknown) {
-  const text = checkContent(content);
   const existing = await db
-    .prepare("SELECT created_at, source FROM memos WHERE id = ? AND user_id = ?")
+    .prepare(
+      "SELECT created_at, source, EXISTS (SELECT 1 FROM attachments WHERE memo_id = m.id) AS has_att FROM memos m WHERE id = ? AND user_id = ?",
+    )
     .bind(id, userId)
-    .first<{ created_at: number; source: string }>();
+    .first<{ created_at: number; source: string; has_att: number }>();
   if (!existing) throw new MemoError(404, "不存在");
+  const text = checkContent(content, existing.has_att === 1);
   const now = Date.now();
   await db.batch([
     db

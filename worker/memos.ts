@@ -14,6 +14,7 @@ import {
   updateMemo,
   type MemoRow,
 } from "./memo-service";
+import { withChannelTags } from "./auto-tags";
 import { indexStatus, related, scheduleIndex, scheduleRemove, search, startIndexJob, type SearchMode } from "./search";
 
 /** 网页会话记为 web；Token 调用可用 X-Yaf-Source 标明 cli，否则记为 api */
@@ -62,7 +63,8 @@ memos.get("/memos/:id/related", requireScope("memos:read"), async (c) => {
 memos.post("/memos", requireScope("memos:write"), async (c) => {
   const { content } = await c.req.json<{ content?: string }>();
   const user = c.get("user");
-  const memo = await createMemo(c.env.DB, user.id, content, sourceOf(c));
+  const source = sourceOf(c);
+  const memo = await createMemo(c.env.DB, user.id, await withChannelTags(c.env.DB, user.id, source, content ?? ""), source);
   scheduleIndex(c.env, c.executionCtx, user.id, memo);
   return c.json({ memo }, 201);
 });

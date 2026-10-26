@@ -138,6 +138,9 @@ Cron（每 15 分钟）→ 查到期的 insight_plans（用 croner 解析 cron �
 - 2026-10-25：只收录扫码者本人（`ilink_user_id`）发来的消息；按 `message_id` 在 DO 的 SQLite 里去重（保留最近 2000 条）；游标存在 DO storage。
 - 2026-10-25：R2 未开通（账户需在控制台启用），代码里 `MEDIA` 绑定是可选的：未开通时图片只保存 AI 描述，语音只保存微信转写。开通后创建 `yaf-media` bucket、取消 wrangler.jsonc 里的注释即可。
 - 2026-10-25：语音回放暂不做：`silk-wasm` 是 Emscripten 构建，运行时用 fs / fetch 读取 .wasm，不能直接在 Workers 上运行；要支持需自己用 `instantiateWasm` 包一层，或在浏览器端解码。是否需要取决于实测 `voice_item.text` 是否总有值。
+- 2026-10-26：来源标记从彩色文字标签改为时间后面的灰色图标（网页来源不显示），悬停 / 聚焦时提示「来自 xxx」。
+- 2026-10-26：微信正文不再写 `[图片]`、`[语音] 转写中…` 之类的占位：图片、语音作为附件展示，带附件的 memo 允许正文为空。图片的 AI 描述只用于 `alt` / `title`、FTS 和向量，不在卡片上显示。没有任何文字的 memo 不算向量，但照样标记为已索引。
+- 2026-10-26：「自动加 #微信」改为默认关闭（来源已经有图标），开启后可自定义标签；CLI / API / MCP 也各有一个自动标签开关（存 `user_settings.auto_tags`），在 API Token 页配置。服务端写入时追加，客户端不用改。已有绑定的 `autoTag` 由迁移 0006 统一改为关闭。
 - 2026-10-25：图片描述模型 `@cf/mistralai/mistral-small-3.1-24b-instruct`（免费套餐可用，约 5 秒一张）。
 - 2026-10-25：用户扫码绑定成功；实测语音消息带 `voice_item.text`（微信转写）。用户开通 R2，创建 `yaf-media` 并绑定为 `MEDIA`，之后收到的图片 / 语音会保存原文件（开通前收到的补不回来，微信下载链接会过期）。
 - 2026-10-25：语音回放放到浏览器端：点播放时才动态加载 `silk-wasm`（wasm 约 92 KB gzip），把 R2 里的 SILK 解码成 24 kHz wav 再交给 `<audio>`。Workers 端不再转码，`attachments.playback_key` 保留未用。vite 需要 `optimizeDeps.exclude: ["silk-wasm"]`，否则预构建会打断 `new URL("silk.wasm", import.meta.url)`。

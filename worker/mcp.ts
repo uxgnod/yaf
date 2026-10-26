@@ -4,6 +4,7 @@ import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
 import type { Env, Scope, User } from "./env";
 import { findToken } from "./lib/pat";
+import { withChannelTags } from "./auto-tags";
 import { createMemo, getMemo, listMemos, listTags, MemoError, type Memo } from "./memo-service";
 import { related, scheduleIndex, search } from "./search";
 import { getInsight, listInsights } from "./insights";
@@ -74,7 +75,7 @@ function createServer(env: Env, ctx: ExecutionContext, user: User, scopes: Scope
     async ({ content }) => {
       if (!can("memos:write")) return denied("memos:write");
       try {
-        const m = await createMemo(env.DB, user.id, content, "mcp");
+        const m = await createMemo(env.DB, user.id, await withChannelTags(env.DB, user.id, "mcp", content), "mcp");
         scheduleIndex(env, ctx, user.id, m);
         return text(`已记录 ${m.id}${m.tags.length ? " · " + m.tags.map((t) => "#" + t).join(" ") : ""}`);
       } catch (e) {

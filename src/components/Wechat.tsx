@@ -2,9 +2,10 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import QRCode from "qrcode";
 import { api, type QrPollStatus, type WechatRules, type WechatState } from "../api";
 import { Card, formatDate } from "./Settings";
+import { TagInput } from "./TagInput";
 
-const RULES: { key: keyof WechatRules; label: string; desc: string }[] = [
-  { key: "autoTag", label: "自动加 #微信", desc: "从微信收录的 memo 末尾追加 #微信 标签" },
+type Toggle = "keepAudio" | "replyConfirm" | "mergeWindow";
+const RULES: { key: Toggle; label: string; desc: string }[] = [
   { key: "keepAudio", label: "语音保留原音频", desc: "把语音原文件存到 R2（正文使用微信的转写文字）" },
   { key: "replyConfirm", label: "收录后回复确认", desc: "在微信里回复「已记录 · #标签」（24 小时内的会话才能回复）" },
   { key: "mergeWindow", label: "合并连续消息", desc: "2 分钟内连续发的文字消息合并成一条 memo" },
@@ -36,12 +37,13 @@ export function WechatSection() {
     <div className="settings-stack">
       {connected ? <Connected state={state} onChange={load} /> : <Binder onConnected={load} />}
       {connected && <RulesCard state={state} onChange={(rules) => setState({ ...state, rules })} />}
+      {connected && <AutoTagCard state={state} onChange={(rules) => setState({ ...state, rules })} />}
       <Card title="说明与风险">
         <ul className="plain-list muted small">
           <li>连接的是微信里的「ClawBot」（微信 → 我 → 设置 → 插件 / ClawBot，灰度开放中）。扫码后，在微信里给 ClawBot 发的文字、图片、语音会存为 memo。</li>
           <li>这是非官方接入（复用 OpenClaw 插件的协议），可能违反服务条款，也可能随时失效。失效时只影响微信收录，不影响其他功能。</li>
           <li>同一个 ClawBot 很可能只能连接一个后端：绑定 yaf 后，原来连接的 OpenClaw 可能会断开。</li>
-          <li>只收录扫码的那个微信账号发来的消息。图片会用 AI 生成描述，用于搜索。</li>
+          <li>只收录扫码的那个微信账号发来的消息。图片会用 AI 生成描述，不在卡片上显示，只用于搜索和无障碍朗读。</li>
           {!state.mediaEnabled && <li>当前没有开通 R2：图片和语音原文件不会保存，只保留描述和转写文字。</li>}
         </ul>
       </Card>
@@ -207,6 +209,38 @@ function RulesCard({ state, onChange }: { state: WechatState; onChange: (r: Wech
           </label>
         ))}
       </div>
+    </Card>
+  );
+}
+
+function AutoTagCard({ state, onChange }: { state: WechatState; onChange: (r: WechatRules) => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const save = async (patch: Partial<WechatRules>) => {
+    setError(null);
+    try {
+      onChange((await api.wechatRules(patch)).rules);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const { autoTag, autoTags } = state.rules;
+  return (
+    <Card title="自动标签" desc="来源已经用卡片上的图标标出，一般不需要再加标签。想在标签树里单独归类微信消息时再开启。">
+      <label className="check check-desc">
+        <input type="checkbox" checked={autoTag} onChange={(e) => save({ autoTag: e.target.checked })} />
+        <span>
+          <span>给微信收录的 memo 自动加标签</span>
+          <span className="muted small">默认关闭。只对开启后新收录的 memo 生效，已有 memo 不变。</span>
+        </span>
+      </label>
+      {autoTag && (
+        <div className="auto-tag-body">
+          <label className="field-label" htmlFor="wechat-tags">要添加的标签</label>
+          <TagInput id="wechat-tags" value={autoTags} onChange={(tags) => save({ autoTags: tags })} />
+          <span className="muted small">可填多个，支持层级（如 收件箱/手机）。标签加在正文末尾，之后可以像普通标签一样编辑或删除。</span>
+        </div>
+      )}
+      {error && <div className="form-error">{error}</div>}
     </Card>
   );
 }

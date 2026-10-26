@@ -21,10 +21,14 @@ export interface Attachment {
 
 export interface WechatRules {
   autoTag: boolean;
+  autoTags: string[];
   keepAudio: boolean;
   replyConfirm: boolean;
   mergeWindow: boolean;
 }
+
+export type Channel = "cli" | "api" | "mcp";
+export type ChannelTags = Record<Channel, { on: boolean; tags: string[] }>;
 
 export interface WechatState {
   status: "none" | "pending" | "active" | "error" | "unbound";
@@ -247,6 +251,10 @@ export const api = {
   aiSettings: () => request<{ hasClaudeKey: boolean; workersAiModel: string; claudeModel: string }>("/settings/ai"),
   setClaudeKey: (anthropicKey: string | null) =>
     request<{ hasClaudeKey: boolean }>("/settings/ai", { method: "PUT", body: json({ anthropicKey }) }),
+
+  autoTags: () => request<ChannelTags>("/settings/auto-tags"),
+  setAutoTags: (patch: Partial<ChannelTags>) =>
+    request<ChannelTags>("/settings/auto-tags", { method: "PUT", body: json(patch) }),
 
   wechat: () => request<WechatState>("/wechat"),
   wechatQrcode: () => request<{ qrContent: string; expiresAt: number }>("/wechat/qrcode", { method: "POST" }),

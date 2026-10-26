@@ -1,7 +1,9 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { api, type ApiToken, type Cadence, type IndexStatus, type InsightPlan, type Perspective, type PlanInput, type Scope, type TagCount, type User } from "../api";
+import { api, type ApiToken, type Channel, type ChannelTags, type Cadence, type IndexStatus, type InsightPlan, type Perspective, type PlanInput, type Scope, type TagCount, type User } from "../api";
 import { describeSchedule } from "./Insights";
 import { WechatSection } from "./Wechat";
+import { TagInput } from "./TagInput";
+import { SourceGlyph } from "./SourceIcon";
 import { navigate } from "../router";
 import { useTheme } from "../theme";
 
@@ -306,6 +308,8 @@ function TokensSection() {
         <CodeLine code={`echo "想法 #inbox" | yaf add`} />
         <p className="muted small">其他命令：yaf search &lt;关键词&gt;、yaf tags、yaf export --tag &lt;标签&gt;。</p>
       </Card>
+
+      <ChannelTagsCard />
 
       {creating && (
         <CreateTokenDialog
@@ -841,3 +845,58 @@ const JOB_STATUS: Record<string, string> = {
   terminated: "已终止",
   unknown: "未知",
 };
+
+const CHANNEL_ROWS: { key: Channel; label: string; desc: string }[] = [
+  { key: "cli", label: "CLI", desc: "yaf add 记录的 memo" },
+  { key: "api", label: "API", desc: "脚本、快捷指令等直接调用接口写入的 memo" },
+  { key: "mcp", label: "MCP", desc: "Claude Code 等 AI 助手通过 add_memo 写入的 memo" },
+];
+
+function ChannelTagsCard() {
+  const [cfg, setCfg] = useState<ChannelTags | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    api.autoTags().then(setCfg, (e) => setError(e instanceof Error ? e.message : String(e)));
+  }, []);
+  const save = async (ch: Channel, patch: Partial<ChannelTags[Channel]>) => {
+    setError(null);
+    try {
+      setCfg(await api.setAutoTags({ [ch]: patch }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  return (
+    <Card
+      title="自动标签"
+      desc="按来源给新 memo 自动加标签，默认全部关闭。只对开启后新写入的 memo 生效；内容里自带的标签照常保留。微信的设置在「微信连接」页。"
+    >
+      {!cfg ? (
+        <div className="muted small">{error ?? "加载中…"}</div>
+      ) : (
+        <div>
+          {CHANNEL_ROWS.map((r) => (
+            <div key={r.key} className="channel-row">
+              <label className="check check-desc">
+                <input type="checkbox" checked={cfg[r.key].on} onChange={(e) => save(r.key, { on: e.target.checked })} />
+                <span className="channel-icon"><SourceGlyph source={r.key} size={14} /></span>
+                <span>
+                  <span>{r.label}</span>
+                  <span className="muted small">{r.desc}</span>
+                </span>
+              </label>
+              {cfg[r.key].on && (
+                <div className="auto-tag-body">
+                  <label className="field-label" htmlFor={`tags-${r.key}`}>要添加的标签</label>
+                  <TagInput id={`tags-${r.key}`} value={cfg[r.key].tags} onChange={(tags) => save(r.key, { tags })} />
+                </div>
+              )}
+            </div>
+          ))}
+          {error && <div className="form-error">{error}</div>}
+        </div>
+      )}
+    </Card>
+  );
+}

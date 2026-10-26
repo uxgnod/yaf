@@ -3,6 +3,7 @@ import { api, type Attachment, type Memo, type MemoHit } from "../api";
 import { renderMarkdown } from "../markdown";
 import { silkToWavUrl } from "../silk";
 import { Editor } from "./Editor";
+import { SourceIcon } from "./SourceIcon";
 
 interface Props {
   memo: MemoHit;
@@ -11,8 +12,6 @@ interface Props {
   onUpdate: (id: string, content: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }
-
-const SOURCE_LABEL: Record<string, string> = { wechat: "来自微信", api: "来自 API", cli: "来自 CLI", mcp: "来自 MCP" };
 
 function formatTime(ts: number) {
   const d = new Date(ts);
@@ -40,6 +39,7 @@ export function MemoCard({ memo, terms = [], onUpdate, onDelete }: Props) {
       <div className="memo-card editing">
         <Editor
           initial={memo.content}
+          allowEmpty={Boolean(memo.attachments?.length)}
           submitLabel="保存"
           autoFocus
           onCancel={() => setEditing(false)}
@@ -59,7 +59,7 @@ export function MemoCard({ memo, terms = [], onUpdate, onDelete }: Props) {
           <time title={memo.updatedAt !== memo.createdAt ? `编辑于 ${formatTime(memo.updatedAt)}` : undefined}>
             {formatTime(memo.createdAt)}
           </time>
-          {SOURCE_LABEL[memo.source] && <span className={`source-badge source-${memo.source}`}>{SOURCE_LABEL[memo.source]}</span>}
+          <SourceIcon source={memo.source} />
           {memo.match?.keywordRank && <span className="hit-badge hit-keyword">关键词</span>}
           {memo.match?.semanticScore && (
             <span className="hit-badge hit-semantic" title="语义相似度（cosine）">语义 {memo.match.semanticScore.toFixed(2)}</span>
@@ -100,7 +100,9 @@ export function MemoCard({ memo, terms = [], onUpdate, onDelete }: Props) {
           )}
         </div>
       </header>
-      <div className="markdown" dangerouslySetInnerHTML={{ __html: html }} onDoubleClick={() => setEditing(true)} />
+      {memo.content.trim() && (
+        <div className="markdown" dangerouslySetInnerHTML={{ __html: html }} onDoubleClick={() => setEditing(true)} />
+      )}
       {memo.attachments && memo.attachments.length > 0 && <Attachments list={memo.attachments} />}
       <Related memoId={memo.id} />
     </article>
@@ -167,40 +169,32 @@ function Attachments({ list }: { list: Attachment[] }) {
   return (
     <div className="attachments">
       {images.length > 0 && (
-        <div className="att-images">
+        <div className={"att-images" + (images.length === 1 ? " single" : "")}>
           {images.map((a) =>
             a.hasFile ? (
-              <button key={a.id} className="att-thumb" onClick={() => setZoom(a.id)} title={a.description ?? "图片"}>
-                <img src={api.attachmentUrl(a.id)} alt={a.description ?? "图片"} loading="lazy" />
+              // AI 描述只用于无障碍朗读、悬停提示和搜索，不在卡片上显示
+              <button key={a.id} className="att-thumb" onClick={() => setZoom(a.id)} aria-label={`查看大图${a.description ? "：" + a.description : ""}`}>
+                <img src={api.attachmentUrl(a.id)} alt={a.description ?? "图片"} title={a.description ?? undefined} loading="lazy" />
               </button>
             ) : (
-              <div key={a.id} className="att-image-missing muted small">🖼 {a.description ?? "图片（未保存原图）"}</div>
+              <span key={a.id} className="att-missing muted small" title={a.description ?? undefined}>图片原文件未保存</span>
             ),
           )}
         </div>
       )}
-      {images.some((a) => a.hasFile && a.description) && (
-        <div className="att-desc muted small">图片内容：{images.map((a) => a.description).filter(Boolean).join("；")}</div>
-      )}
-      {voices.map((a) => (
-        <div key={a.id} className="att-voice">
-          <span className="att-voice-icon">🎙</span>
-          {a.hasFile ? (
+      {voices.map((a) =>
+        a.hasFile ? (
+          <div key={a.id} className="att-voice">
             <VoicePlayer id={a.id} durationMs={a.durationMs} />
-          ) : (
-            <>
-              <span className="att-voice-bar">
-                <span className="att-voice-wave" />
-                <span className="muted small">{duration(a.durationMs) || "语音"}</span>
-              </span>
-              <span className="muted small">未保存原音频</span>
-            </>
-          )}
-        </div>
-      ))}
+            {!a.description && <span className="muted small">没有转写文字</span>}
+          </div>
+        ) : (
+          <span key={a.id} className="att-missing muted small">语音原文件未保存</span>
+        ),
+      )}
       {zoom && (
         <div className="lightbox" onClick={() => setZoom(null)}>
-          <img src={api.attachmentUrl(zoom)} alt="" />
+          <img src={api.attachmentUrl(zoom)} alt={images.find((a) => a.id === zoom)?.description ?? ""} />
         </div>
       )}
     </div>
@@ -212,10 +206,12 @@ function VoicePlayer({ id, durationMs }: { id: string; durationMs: number | null
   const [src, setSrc] = useState<string | null>(null);
   const [state, setState] = useState<"idle" | "loading" | "error">("idle");
   if (src) return <audio controls autoPlay src={src} />;
+  const label = duration(durationMs);
   return (
     <button
-      className="att-voice-bar att-voice-play"
+      className="att-voice-play"
       disabled={state === "loading"}
+      aria-label={`播放语音${label ? "，" + label : ""}`}
       onClick={async () => {
         setState("loading");
         try {
@@ -226,10 +222,12 @@ function VoicePlayer({ id, durationMs }: { id: string; durationMs: number | null
         }
       }}
     >
-      <span className="att-voice-icon-play">{state === "loading" ? "…" : "▶"}</span>
-      <span className="att-voice-wave" />
-      <span className="muted small">
-        {state === "error" ? "解码失败" : state === "loading" ? "加载中" : duration(durationMs) || "播放"}
+      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+        <path d="M2 1l7 4-7 4z" fill="currentColor" />
+      </svg>
+      <span className="att-voice-wave" aria-hidden="true" />
+      <span className="att-voice-time">
+        {state === "error" ? "解码失败" : state === "loading" ? "加载中" : label || "播放"}
       </span>
     </button>
   );

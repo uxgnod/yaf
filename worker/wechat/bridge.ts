@@ -6,12 +6,15 @@ import { open } from "../lib/secret-box";
 import { createMemo, updateMemo } from "../memo-service";
 import { scheduleIndex } from "../search";
 import { extractTags } from "../../shared/tags";
+import { appendTags } from "../auto-tags";
 import { getUpdates, ItemType, MessageType, notify, sendText, STALE_TOKEN, type WeixinMessage } from "./protocol";
 import { saveMedia } from "./media";
 
 export interface WechatRules {
-  /** 自动追加 #微信 */
+  /** 自动追加标签（默认关闭；来源已由卡片上的图标标出） */
   autoTag: boolean;
+  /** 自动追加的标签，不带 # */
+  autoTags: string[];
   /** 语音保留原音频（存 R2） */
   keepAudio: boolean;
   /** 收录后回复「已记录」 */
@@ -20,7 +23,13 @@ export interface WechatRules {
   mergeWindow: boolean;
 }
 
-export const DEFAULT_RULES: WechatRules = { autoTag: true, keepAudio: true, replyConfirm: true, mergeWindow: false };
+export const DEFAULT_RULES: WechatRules = {
+  autoTag: false,
+  autoTags: ["微信"],
+  keepAudio: true,
+  replyConfirm: true,
+  mergeWindow: false,
+};
 const MERGE_MS = 2 * 60_000;
 const POLL_TIMEOUT_MS = 30_000;
 const SEEN_KEEP = 2000;
@@ -148,46 +157,47 @@ export class WechatBridge extends DurableObject<Env> {
     if (!this.firstSeen(id)) return;
 
     const items = msg.item_list ?? [];
+    // 正文只放用户说的话：文字和语音转写。图片、语音本身作为附件展示，不再写 [图片] 之类的占位。
+    // 文件和视频还不保存原文件，只能在正文里留个记号。
     const texts: string[] = [];
-    let pendingTranscript = false;
     for (const it of items) {
       if (it.type === ItemType.TEXT && it.text_item?.text?.trim()) texts.push(it.text_item.text.trim());
-      else if (it.type === ItemType.VOICE) {
-        const t = it.voice_item?.text?.trim();
-        if (t) texts.push(t);
-        else {
-          texts.push("[语音] 转写中…");
-          pendingTranscript = true;
-        }
-      } else if (it.type === ItemType.IMAGE) texts.push("[图片]");
+      else if (it.type === ItemType.VOICE && it.voice_item?.text?.trim()) texts.push(it.voice_item.text.trim());
       else if (it.type === ItemType.FILE) texts.push(`[文件] ${it.file_item?.file_name ?? ""}`.trim());
       else if (it.type === ItemType.VIDEO) texts.push("[视频]");
     }
-    if (!texts.length) return;
-    let body = texts.join("\n");
     const hasMedia = items.some((it) => it.type === ItemType.IMAGE || it.type === ItemType.VOICE);
+    if (!texts.length && !hasMedia) return;
+    const body = texts.join("\n");
+    const tags = rules.autoTag ? rules.autoTags : [];
     const now = Date.now();
 
     // 合并连续文字消息
-    const last = await this.ctx.storage.get<{ id: string; at: number; content: string }>("lastMemo");
+    // raw 是没加自动标签的正文，合并时在它后面接新内容，再统一加标签
+    const last = await this.ctx.storage.get<{ id: string; at: number; raw?: string; media?: boolean }>("lastMemo");
     let memo;
-    if (rules.mergeWindow && !hasMedia && last && now - last.at < MERGE_MS) {
-      const base = last.content.replace(/\s*#微信\s*$/, "");
-      const content = withTag(`${base}\n${body}`, rules.autoTag);
+    let raw = body;
+    if (rules.mergeWindow && !hasMedia && last?.raw && !last.media && now - last.at < MERGE_MS) {
+      raw = `${last.raw}\n${body}`;
       try {
-        memo = await updateMemo(this.env.DB, userId, last.id, content);
+        memo = await updateMemo(this.env.DB, userId, last.id, appendTags(raw, tags));
       } catch {
         memo = null; // 原 memo 已被删除，新建一条
+        raw = body;
       }
     }
-    if (!memo) memo = await createMemo(this.env.DB, userId, withTag(body, rules.autoTag), "wechat");
-    await this.ctx.storage.put("lastMemo", { id: memo.id, at: now, content: memo.content });
+    if (!memo) memo = await createMemo(this.env.DB, userId, appendTags(body, tags), "wechat", { allowEmpty: hasMedia });
+    await this.ctx.storage.put("lastMemo", { id: memo.id, at: now, raw, media: hasMedia });
 
     if (hasMedia) {
       // 下载、解密、存 R2、图片描述 / 语音转写，完成后再重算向量
       this.ctx.waitUntil(
-        saveMedia(this.env, userId, memo.id, items, { keepAudio: rules.keepAudio, transcribe: pendingTranscript })
-          .catch((e) => console.error("wechat media failed", e))
+        saveMedia(this.env, userId, memo.id, items, { keepAudio: rules.keepAudio })
+          .catch(async (e) => {
+            console.error("wechat media failed", e);
+            // 什么都没存下来时留一句说明，避免出现空白卡片
+            if (!memo.content.trim()) await updateMemo(this.env.DB, userId, memo.id, "（微信图片 / 语音保存失败）").catch(() => {});
+          })
           .then(() => scheduleIndex(this.env, this.ctx, userId, memo)),
       );
     } else scheduleIndex(this.env, this.ctx, userId, memo);
@@ -202,11 +212,6 @@ export class WechatBridge extends DurableObject<Env> {
       );
     }
   }
-}
-
-function withTag(content: string, autoTag: boolean) {
-  if (!autoTag || /(^|\s)#微信(\s|$)/.test(content)) return content;
-  return `${content} #微信`;
 }
 
 /** 解绑时通知微信端停止推送（失败忽略） */
