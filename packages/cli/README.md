@@ -94,4 +94,6 @@ yaf search 周报
 
 ## License
 
-MIT
+`yaf-cli` is licensed under the [MIT License](https://github.com/uxgnod/yaf/blob/main/packages/cli/LICENSE). The yaf server it talks to is licensed separately under [AGPL-3.0](https://github.com/uxgnod/yaf/blob/main/LICENSE).
+
+`yaf-cli` 以 [MIT](https://github.com/uxgnod/yaf/blob/main/packages/cli/LICENSE) 授权；它所连接的 yaf 服务端另以 [AGPL-3.0](https://github.com/uxgnod/yaf/blob/main/LICENSE) 授权。
