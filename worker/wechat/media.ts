@@ -3,8 +3,9 @@ import { ecb } from "@noble/ciphers/aes.js";
 import type { Env } from "../env";
 import { downloadMedia, hexToB64, ItemType, parseAesKey, type CdnMedia, type MessageItem } from "./protocol";
 
-// 实测免费套餐可用、能读中文提示的视觉模型
-export const VISION_MODEL = "@cf/mistralai/mistral-small-3.1-24b-instruct";
+// 图片描述：Qwen3.8 27B，关掉思考（开着会先写推理，200 token 内正文被截断，用量翻倍）。
+// 2026-10-26 实测：认字最完整，约 2–3 秒、30–45 neurons 一张；更便宜的备选是 @cf/google/gemma-4-26b-a4b-it（约 4 neurons）
+export const VISION_MODEL = "@cf/qwen/qwen3.8-27b";
 
 function sniffImage(b: Uint8Array): { mime: string; ext: string } {
   if (b[0] === 0xff && b[1] === 0xd8) return { mime: "image/jpeg", ext: "jpg" };
@@ -37,9 +38,12 @@ export async function describeImage(env: Env, bytes: Uint8Array, mime: string): 
           ],
         },
       ],
-      max_tokens: 200,
-    } as never)) as { response?: string };
-    return res.response?.trim() || null;
+      max_tokens: 300,
+      chat_template_kwargs: { enable_thinking: false },
+    } as never)) as { response?: string; choices?: { message?: { content?: string | null } }[] };
+    // 不同模型返回格式不同：Workers AI 原生格式是 response，OpenAI 兼容格式是 choices
+    const text = res.response ?? res.choices?.[0]?.message?.content ?? "";
+    return text.trim() || null;
   } catch (e) {
     console.warn("describe image failed", e);
     return null;

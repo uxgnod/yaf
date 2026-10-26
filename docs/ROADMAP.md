@@ -220,3 +220,4 @@ Cron（每 15 分钟）→ 查到期的 insight_plans（用 croner 解析 cron �
 - 需要一个只有「Account Analytics: Read」权限的 API Token（`wrangler secret put CF_ANALYTICS_TOKEN`）和账户 ID；套餐（free / paid）用配置项指定。
 - 侧栏底部右侧一个圆环，悬停展开：今日用量 / 10,000、分段构成条、「Free 套餐 · N 小时后重置」「账户合计 · N 分钟前更新」。
 - 2026-10-26：后台补索引（向量 / FTS）和「标为隐私」可能并发：补索引写 FTS 时加条件「memo 仍非隐私」，写完向量后再检查一次，被标为隐私的立刻删除向量。本地实测发现过原文进 FTS 的竞态，已修复。
+- 2026-10-26：图片描述模型从 `mistral-small-3.1-24b` 换成 `@cf/qwen/qwen3.8-27b`（用户选择：数据量小时优先效果）。实测两张测试图：Qwen 认字最完整（Mistral 在 5 次中有 2 次把「用量圆环」认错），关掉思考（`chat_template_kwargs.enable_thinking = false`）后 2–3 秒、约 30–45 neurons 一张；不关会先写推理，正文被截断。更便宜的备选是 `gemma-4-26b-a4b-it`（约 4 neurons 一张，同样要关思考）。已有图片的描述不重算。
