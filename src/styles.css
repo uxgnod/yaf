@@ -464,6 +464,11 @@ label.check .mono { margin-left: auto; }
 .token-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .token-name { font-weight: 500; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .token-scopes { display: flex; flex-wrap: wrap; gap: 4px; }
+.device-code-box {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 14px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-hover);
+}
+.device-code { font-size: 28px; font-weight: 600; letter-spacing: 0.12em; }
 .scope-chip {
   font-size: 11px; line-height: 18px; padding: 0 6px; border-radius: 4px;
   background: var(--accent-soft); color: var(--accent);

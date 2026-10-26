@@ -42,6 +42,7 @@ export function MemoCard({ memo, terms = [], onUpdate, onDelete }: Props) {
           allowEmpty={Boolean(memo.attachments?.length)}
           submitLabel="保存"
           autoFocus
+          closeOnOutsideClick
           onCancel={() => setEditing(false)}
           onSubmit={async (content) => {
             await onUpdate(memo.id, content);

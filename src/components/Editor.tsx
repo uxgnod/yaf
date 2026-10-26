@@ -9,6 +9,8 @@ interface Props {
   /** 带附件的 memo 允许清空正文 */
   allowEmpty?: boolean;
   onCancel?: () => void;
+  /** 点击编辑器外部时：内容没改就取消，改过就保存（用于卡片内编辑，避免双击误触后一直停在编辑态） */
+  closeOnOutsideClick?: boolean;
 }
 
 /** 在选区两侧包裹标记，或在行首插入前缀 */
@@ -39,10 +41,11 @@ function applyFormat(el: HTMLTextAreaElement, kind: "bold" | "list" | "ordered" 
   return next;
 }
 
-export function Editor({ initial = "", placeholder = "现在的想法是…", submitLabel = "发送", autoFocus, allowEmpty, onSubmit, onCancel }: Props) {
+export function Editor({ initial = "", placeholder = "现在的想法是…", submitLabel = "发送", autoFocus, allowEmpty, onSubmit, onCancel, closeOnOutsideClick }: Props) {
   const [value, setValue] = useState(initial);
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   // 自适应高度
   useEffect(() => {
@@ -59,6 +62,17 @@ export function Editor({ initial = "", placeholder = "现在的想法是…", su
       el.setSelectionRange(el.value.length, el.value.length);
     }
   }, [autoFocus]);
+
+  useEffect(() => {
+    if (!closeOnOutsideClick || !onCancel) return;
+    const onDown = (e: MouseEvent) => {
+      if (busy || rootRef.current?.contains(e.target as Node)) return;
+      if (value === initial) onCancel();
+      else submit();
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  });
 
   async function submit() {
     if ((!value.trim() && !allowEmpty) || busy) return;
@@ -84,7 +98,7 @@ export function Editor({ initial = "", placeholder = "现在的想法是…", su
   const fmt = (kind: Parameters<typeof applyFormat>[1]) => () => ref.current && setValue(applyFormat(ref.current, kind));
 
   return (
-    <div className="editor">
+    <div className="editor" ref={rootRef}>
       <textarea
         ref={ref}
         value={value}

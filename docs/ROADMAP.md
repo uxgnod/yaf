@@ -147,3 +147,7 @@ Cron（每 15 分钟）→ 查到期的 insight_plans（用 croner 解析 cron �
 - 2026-10-25：图片描述模型 `@cf/mistralai/mistral-small-3.1-24b-instruct`（免费套餐可用，约 5 秒一张）。
 - 2026-10-25：用户扫码绑定成功；实测语音消息带 `voice_item.text`（微信转写）。用户开通 R2，创建 `yaf-media` 并绑定为 `MEDIA`，之后收到的图片 / 语音会保存原文件（开通前收到的补不回来，微信下载链接会过期）。
 - 2026-10-25：语音回放放到浏览器端：点播放时才动态加载 `silk-wasm`（wasm 约 92 KB gzip），把 R2 里的 SILK 解码成 24 kHz wav 再交给 `<audio>`。Workers 端不再转码，`attachments.playback_key` 保留未用。vite 需要 `optimizeDeps.exclude: ["silk-wasm"]`，否则预构建会打断 `new URL("silk.wasm", import.meta.url)`。
+- 2026-10-26：卡片内编辑（双击或菜单进入）点击编辑器外部时自动退出：内容没改就取消，改过就保存；正文为空且不允许为空时保持编辑态。原因是双击本身是选词手势，容易误进编辑。
+- 2026-10-26：设备授权页把授权码从提示句里拿出来，放在提示和按钮之间的独立区块里，大号等宽显示，下方提示「和终端里显示的代码一致时再授权」。
+- 2026-10-26：分类和敏感识别改用 Workers AI 的 System One 决策模型 Clef（`@cf/cloudflare/clef-flash`，按输入 token 计费，输出不收费），不用正则 + 向量 + LLM 三层方案。实测 13 条真实 memo + 8 条构造样例：真实密码 memo 的 `sensitive` = 0.96，其余都 ≤ 0.03；单选「类别」在真实数据上区分度低（多数是学习笔记，置信度 0.1–0.5 的占 1/4），所以改成相互独立的 noul 标记（sensitive、todo），不做单选类别。clef-flash 单次约 1–2 秒（REST，从本机测），约 300–600 token。
+- 2026-10-26：敏感 memo 的可搜索文本用「逐行遮挡」生成，不生成描述：每行一个 Clef noul 问题判断是否写出了凭据的值，命中的行整行遮挡（已实测）；计划改进为保留第一个分隔符（`：` `:` `=`）之前的标签、其后替换为 `••••`（未实测）；遮挡后的文本进 FTS 和向量，原文不进。Clairic 的 `list` 抽取不可用：非敏感 memo 里也会抽出 Redis、`$user`、`1` 等误报，真实密码 memo 上置信度为 0，并有疑似漏遮。

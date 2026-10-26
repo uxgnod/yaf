@@ -62,8 +62,12 @@ export function DeviceApprove() {
         ) : info ? (
           <>
             <p className="muted small">
-              <b>{info.clientName}</b> 请求访问你的 yaf。请确认终端里显示的代码是 <span className="mono">{code}</span>。
+              <b>{info.clientName}</b> 请求访问你的 yaf。
             </p>
+            <div className="device-code-box">
+              <div className="device-code mono">{code}</div>
+              <div className="muted small">和终端里显示的代码一致时再授权</div>
+            </div>
             <div className="token-scopes">
               {info.scopes.map((s) => (
                 <span key={s} className="scope-chip">{SCOPE_LABEL[s] ?? s}</span>
