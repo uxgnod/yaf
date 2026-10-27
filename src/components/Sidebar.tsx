@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { LensCount, Stats, TagCount, User } from "../api";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { api, type AiUsage, type LensCount, type Stats, type TagCount, type User } from "../api";
 import { navigate } from "../router";
 
 interface TagNode {
@@ -103,26 +104,53 @@ function Heatmap({ data }: { data: Stats["heatmap"] }) {
 
 const LENS_ICON: Record<string, string> = { todo: "☑", private: "⚿" };
 
+type Popover = "menu" | "usage" | null;
+
+/** 底部一行：账户菜单 + 用量圆环。两个弹层都点击打开、互斥，点外面或 Esc 关闭 */
+function SidebarBottom(props: Props) {
+  const [pop, setPop] = useState<Popover>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!pop) return;
+    const close = () => setPop(null);
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!rowRef.current?.contains(t) && !cardRef.current?.contains(t)) close();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", close);
+    };
+  }, [pop]);
+  const toggle = (p: Popover) => () => setPop((v) => (v === p ? null : p));
+  return (
+    <div className="sidebar-bottom" ref={rowRef}>
+      <AccountMenu {...props} open={pop === "menu"} onToggle={toggle("menu")} onClose={() => setPop(null)} />
+      {props.user.role === "admin" && <UsageRing open={pop === "usage"} onToggle={toggle("usage")} rowRef={rowRef} cardRef={cardRef} />}
+    </div>
+  );
+}
+
 const THEME_LABEL: Record<string, string> = { system: "跟随系统", light: "亮色", dark: "暗色" };
 
-/** 底部账户菜单：主题、设置、导出，分隔线下是退出登录 */
-function AccountMenu({ user, onExport, onLogout, theme, onToggleTheme }: Pick<Props, "user" | "onExport" | "onLogout" | "theme" | "onToggleTheme">) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [open]);
+/** 账户菜单：主题、设置、导出，分隔线下是退出登录 */
+function AccountMenu({
+  user, onExport, onLogout, theme, onToggleTheme, open, onToggle, onClose,
+}: Pick<Props, "user" | "onExport" | "onLogout" | "theme" | "onToggleTheme"> & { open: boolean; onToggle: () => void; onClose: () => void }) {
   const pick = (fn: () => void) => () => {
-    setOpen(false);
+    onClose();
     fn();
   };
   return (
-    <div className="account" ref={ref}>
+    <div className="account">
       {open && (
         <div className="menu account-menu" role="menu">
           <button role="menuitem" onClick={onToggleTheme}>
@@ -134,12 +162,126 @@ function AccountMenu({ user, onExport, onLogout, theme, onToggleTheme }: Pick<Pr
           <button role="menuitem" onClick={pick(onLogout)}>退出登录</button>
         </div>
       )}
-      <button className={"account-btn" + (open ? " open" : "")} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+      <button className={"account-btn" + (open ? " open" : "")} aria-haspopup="menu" aria-expanded={open} onClick={onToggle}>
         <span className="avatar">{(user.name || user.email)[0].toUpperCase()}</span>
         <span className="user-name" title={user.email}>{user.name || user.email}</span>
-        <span className="account-caret">⌃</span>
+        <svg className="account-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="m6 9 6 6 6-6" />
+        </svg>
       </button>
     </div>
+  );
+}
+
+const USAGE_REFRESH = 5 * 60_000;
+const nf = new Intl.NumberFormat();
+/** 构成条按用量从大到小，同一色相由深到浅 */
+const SHADES = [
+  "var(--accent)",
+  "color-mix(in srgb, var(--accent) 62%, var(--surface))",
+  "color-mix(in srgb, var(--accent) 38%, var(--surface))",
+  "color-mix(in srgb, var(--accent) 22%, var(--surface))",
+  "var(--border-strong)",
+];
+
+function ago(ms: number) {
+  const min = Math.round(ms / 60_000);
+  if (min < 1) return "刚刚";
+  if (min < 60) return `${min} 分钟前`;
+  return `${Math.round(min / 60)} 小时前`;
+}
+
+/** 底部右侧：今日 Workers AI neurons 用量圆环，点击展开明细（只给 admin）。
+ *  卡片挂到 body 上用 fixed 定位，左边对齐底部这一行，避免被侧栏的滚动容器裁掉 */
+function UsageRing({ open, onToggle, rowRef, cardRef }: {
+  open: boolean;
+  onToggle: () => void;
+  rowRef: React.RefObject<HTMLDivElement | null>;
+  cardRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const [usage, setUsage] = useState<AiUsage | null>(null);
+  const [pos, setPos] = useState({ left: 0, bottom: 0, origin: "100% 100%" });
+  const btnRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const load = () => api.aiUsage().then((r) => setUsage(r.usage), () => {});
+    load();
+    const t = setInterval(load, USAGE_REFRESH);
+    return () => clearInterval(t);
+  }, []);
+  useLayoutEffect(() => {
+    if (!open || !rowRef.current || !btnRef.current) return;
+    const row = rowRef.current.getBoundingClientRect();
+    const btn = btnRef.current.getBoundingClientRect();
+    setPos({ left: row.left, bottom: window.innerHeight - row.top + 8, origin: `${btn.left + btn.width / 2 - row.left}px 100%` });
+  }, [open, rowRef]);
+  if (!usage) return null;
+  const ratio = usage.total / usage.limit;
+  const pct = Math.round(ratio * 100);
+  const high = ratio >= 0.8;
+  const r = 7;
+  const len = 2 * Math.PI * r;
+  const now = Date.now();
+  const hours = Math.max(1, Math.ceil((usage.resetAt - now) / 3_600_000));
+  const parts = usage.parts.filter((p) => p.neurons > 0).sort((a, b) => b.neurons - a.neurons);
+  const share = (n: number) => {
+    const v = (n / usage.total) * 100;
+    return v < 1 ? "<1%" : `${Math.round(v)}%`;
+  };
+  return (
+    <>
+      <button
+        ref={btnRef}
+        className={"usage" + (high ? " high" : "") + (open ? " open" : "")}
+        title={`AI 用量 ${pct}%`}
+        aria-label={`今日 AI 用量 ${pct}%`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        <svg className="usage-ring" width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+          <circle cx="9" cy="9" r={r} className="track" />
+          <circle cx="9" cy="9" r={r} className="fill" strokeDasharray={`${Math.min(ratio, 1) * len} ${len}`} transform="rotate(-90 9 9)" />
+        </svg>
+      </button>
+      {createPortal(
+        <div
+          ref={cardRef}
+          className={"usage-card" + (open ? " open" : "") + (high ? " high" : "")}
+          role="dialog"
+          aria-label="今日 AI 用量"
+          aria-hidden={!open}
+          style={{ left: pos.left, bottom: pos.bottom, transformOrigin: pos.origin }}
+        >
+          <div className="usage-head usage-in">
+            <b>今日 AI 用量</b>
+            <span className="num">{nf.format(usage.total)} / {nf.format(usage.limit)}（{pct}%）</span>
+          </div>
+          {parts.length > 0 && (
+            <>
+              <div className="usage-bar usage-in d1">
+                {parts.map((p, i) => (
+                  <span key={p.key} style={{ flexGrow: p.neurons, background: SHADES[Math.min(i, SHADES.length - 1)] }} />
+                ))}
+              </div>
+              <ul className="usage-legend usage-in d2">
+                {parts.map((p, i) => (
+                  <li key={p.key} title={`${nf.format(p.neurons)} neurons`}>
+                    <span className="dot" style={{ background: SHADES[Math.min(i, SHADES.length - 1)] }} />
+                    {p.label}
+                    <span className="num">{share(p.neurons)}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          <div className="usage-foot usage-in d3">
+            <div>{usage.plan === "paid" ? "Paid" : "Free"} 套餐<span className="num">{hours} 小时后重置</span></div>
+            <div>账户合计<span className="num">{ago(now - usage.updatedAt)}</span></div>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 
@@ -209,9 +351,7 @@ export function Sidebar(props: Props) {
         ))}
       </ul>
 
-      <div className="sidebar-bottom">
-        <AccountMenu {...props} />
-      </div>
+      <SidebarBottom {...props} />
     </aside>
   );
 }

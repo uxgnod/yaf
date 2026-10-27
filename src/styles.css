@@ -277,10 +277,52 @@ label input:focus, label select:focus { border-color: var(--accent); box-shadow:
   display: flex; align-items: center; gap: 8px; font: inherit; font-size: 13px; font-weight: 500; color: var(--text); cursor: pointer;
 }
 .account-btn:hover, .account-btn.open { background: var(--surface-hover); }
-.account-caret { margin-left: auto; color: var(--muted); font-size: 11px; }
+.account-caret { flex: none; color: var(--muted); transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.account-btn.open .account-caret { transform: rotate(180deg); }
 .menu.account-menu { top: auto; bottom: 40px; left: 0; right: auto; min-width: 200px; }
 .menu-value { float: right; color: var(--muted); font-size: 12px; }
 .menu-sep { height: 1px; margin: 4px 0; background: var(--border); }
+.usage { flex: none; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
+.usage:hover, .usage.open { background: var(--surface-hover); }
+.usage:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.usage-ring circle { fill: none; stroke-width: 2.5; }
+.usage-ring .track { stroke: var(--border-strong); }
+.usage-ring .fill { stroke: var(--accent); stroke-linecap: round; }
+.usage.high .usage-ring .fill { stroke: var(--warn); }
+/* 用量卡片：从圆环处向上弹出（Dock 式），收起更快、不回弹 */
+.usage-card {
+  position: fixed; z-index: 50; width: 272px; box-sizing: border-box; padding: 16px 18px;
+  display: grid; gap: 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(16, 17, 20, 0.12), 0 2px 6px rgba(16, 17, 20, 0.05);
+  font-size: 13px; color: var(--muted);
+  opacity: 0; transform: translateY(6px) scale(0.88); visibility: hidden; pointer-events: none;
+  transition: opacity 0.1s ease-in, transform 0.12s ease-in, visibility 0s 0.12s;
+}
+.usage-card.open {
+  opacity: 1; transform: none; visibility: visible; pointer-events: auto;
+  transition: opacity 0.14s ease-out, transform 0.22s cubic-bezier(0.2, 1.25, 0.4, 1), visibility 0s;
+}
+.usage-card .usage-in { opacity: 0; transform: translateY(3px); transition: opacity 0.1s, transform 0.1s; }
+.usage-card.open .usage-in { opacity: 1; transform: none; transition: opacity 0.16s ease-out, transform 0.18s ease-out; }
+.usage-card.open .d1 { transition-delay: 0.04s; }
+.usage-card.open .d2 { transition-delay: 0.07s; }
+.usage-card.open .d3 { transition-delay: 0.1s; }
+.usage-card .num { margin-left: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums; }
+.usage-head { display: flex; align-items: baseline; gap: 8px; }
+.usage-head b { font-size: 15px; font-weight: 600; color: var(--text); }
+.usage-head .num { color: var(--muted); }
+.usage-card.high .usage-head .num { color: var(--warn); }
+.usage-bar { display: flex; gap: 2px; height: 6px; border-radius: 3px; overflow: hidden; background: var(--surface-hover); }
+.usage-bar span { min-width: 3px; }
+.usage-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.usage-legend li { display: flex; align-items: center; gap: 10px; height: 22px; }
+.usage-legend .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.usage-foot { display: grid; gap: 2px; padding-top: 12px; border-top: 1px solid var(--border); }
+.usage-foot > div { display: flex; align-items: center; height: 22px; }
+@media (prefers-reduced-motion: reduce) {
+  .usage-card, .usage-card.open, .usage-card .usage-in, .usage-card.open .usage-in { transform: none; transition-duration: 0s; transition-delay: 0s; }
+}
 .source-link { display: inline-block; padding: 6px 8px; color: var(--muted); text-decoration: none; }
 .source-link:hover { color: var(--text-2); text-decoration: underline; }
 

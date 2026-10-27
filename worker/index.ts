@@ -9,6 +9,7 @@ import { judgeBackfill } from "./judge";
 import { insights, runDuePlans } from "./insights";
 import { wechat } from "./wechat/routes";
 import { autoTags } from "./auto-tags";
+import { usage } from "./usage";
 
 const app = new Hono<AppEnv>().basePath("/api");
 
@@ -17,6 +18,7 @@ app.route("/", tokens);
 app.route("/", insights);
 app.route("/", wechat);
 app.route("/", autoTags);
+app.route("/", usage);
 app.route("/", memos);
 
 app.onError((err, c) => {

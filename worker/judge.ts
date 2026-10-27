@@ -4,7 +4,7 @@ import type { Env } from "./env";
 import { LENS_REV, LENSES } from "./lenses";
 import { ftsStatements } from "./search";
 
-const CLEF_MODEL = "@cf/cloudflare/clef-flash";
+export const CLEF_MODEL = "@cf/cloudflare/clef-flash";
 const MAX_QUESTIONS = 64;
 const STATE_MAX_CHARS = 12_000;
 /** 一行被判为写出了凭据值的概率阈值（宁可多遮） */

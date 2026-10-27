@@ -14,6 +14,12 @@ export interface Env {
   ENCRYPTION_KEY?: string;
   /** 若设置（`wrangler secret put SETUP_TOKEN`），首次创建 admin 时需提供该口令，防止部署后被他人抢先注册 */
   SETUP_TOKEN?: string;
+  /** 账户 ID，查 AI 用量用（`wrangler secret put CF_ACCOUNT_ID`，不写进 wrangler.jsonc） */
+  CF_ACCOUNT_ID?: string;
+  /** 只有「Account Analytics: Read」权限的 API Token（`wrangler secret put CF_ANALYTICS_TOKEN`）；不设置则不显示 AI 用量 */
+  CF_ANALYTICS_TOKEN?: string;
+  /** Workers 套餐：free | paid，只影响用量卡片上的文字（`wrangler secret put AI_PLAN`，不设置按 free） */
+  AI_PLAN?: string;
 }
 
 export interface User {

@@ -17,6 +17,15 @@ export interface Memo {
   ask?: string[];
 }
 
+export interface AiUsage {
+  total: number;
+  limit: number;
+  plan: "free" | "paid";
+  parts: { key: string; label: string; neurons: number }[];
+  resetAt: number;
+  updatedAt: number;
+}
+
 export interface LensCount {
   key: string;
   name: string;
@@ -273,6 +282,8 @@ export const api = {
   autoTags: () => request<ChannelTags>("/settings/auto-tags"),
   setAutoTags: (patch: Partial<ChannelTags>) =>
     request<ChannelTags>("/settings/auto-tags", { method: "PUT", body: json(patch) }),
+
+  aiUsage: () => request<{ usage: AiUsage | null }>("/usage/ai"),
 
   wechat: () => request<WechatState>("/wechat"),
   wechatQrcode: () => request<{ qrContent: string; expiresAt: number }>("/wechat/qrcode", { method: "POST" }),
