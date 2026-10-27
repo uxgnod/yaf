@@ -12,8 +12,7 @@
     {
       "binding": "DB",
       "database_name": "yaf-db",
-      // 部署前执行 `npx wrangler d1 create yaf-db`，把返回的 id 填到这里
-      "database_id": "e8635755-c827-4471-becd-45712f518874",
+      // 不要把 database_id 提交到 main：安装时由 docs/AGENT-INSTALL.md 写在自己的 deploy 分支上
       "migrations_dir": "migrations"
     }
   ],
@@ -39,5 +38,5 @@
     // 模型请求经过账户的 AI Gateway（日志、缓存、限流）；留空则直连
     "AI_GATEWAY_ID": "default"
   }
-  // secret：ENCRYPTION_KEY（加密用户的 Claude API key）、SETUP_TOKEN
+  // secret：ENCRYPTION_KEY（加密用户的 Claude API key）、SETUP_TOKEN、CF_ACCOUNT_ID + CF_ANALYTICS_TOKEN + AI_PLAN（AI 用量用，见 README）。用户自己的设置都放 secret 或 deploy 分支，不改 main
 }

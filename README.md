@@ -4,7 +4,7 @@ English · [中文](README.zh-CN.md)
 
 **yaf is an open-source, self-hosted clone of [flomo](https://flomoapp.com)**, the quick-capture memo app. It runs on Cloudflare, works on the free plan, and is designed to be AI-native from the start.
 
-> **Work in progress.** Features, database schema and APIs may still change; check the commit log before upgrading. If you prefer the original, simple version without AI, use the [`v0.1.0`](https://github.com/uxgnod/yaf/tree/v0.1.0) tag.
+> **Work in progress.** Features and APIs may still change; read [CHANGELOG.md](CHANGELOG.md) before upgrading. If you prefer the original, simple version without AI, use the [`v0.1.0`](https://github.com/uxgnod/yaf/tree/v0.1.0) tag.
 
 - **Open source**: the code is licensed under [AGPL-3.0](LICENSE). Modify and fork it freely; see [TRADEMARKS.md](TRADEMARKS.md) for use of the name.
 - **Self-hosted**: your data stays in your own Cloudflare account. One Worker serves both the API and the web app.
@@ -51,21 +51,55 @@ npm run dev                # http://localhost:5173
 
 The first visit opens the "create admin account" page.
 
-## Deploy to Cloudflare
+## Install on Cloudflare
+
+**Let an AI agent do it** (Claude Code, Codex, …). Open an empty folder in the agent and say:
+
+> Read https://raw.githubusercontent.com/uxgnod/yaf/main/docs/AGENT-INSTALL.md and install yaf for me.
+
+The agent checks your environment, walks you through the Cloudflare login, creates the database and search index, sets the secrets, deploys, and hands you the URL. You only click "Allow" in the browser and choose an admin password. See [docs/AGENT-INSTALL.md](docs/AGENT-INSTALL.md).
+
+**Or by hand.** Work on your own `deploy` branch so upgrades stay clean (the database id is the only personal value in the repo; never commit it to `main`):
 
 ```bash
+git checkout -b deploy $(git tag --sort=-v:refname | head -1)   # the latest release
 npx wrangler login
-npx wrangler d1 create yaf-db          # put the returned database_id into wrangler.jsonc
+npx wrangler d1 create yaf-db          # put the returned database_id into wrangler.jsonc, then commit on deploy
 npx wrangler vectorize create yaf-memos --dimensions=1024 --metric=cosine
 npx wrangler vectorize create-metadata-index yaf-memos --propertyName=userId --type=string
-npm run db:migrate:remote
 npx wrangler secret put SETUP_TOKEN    # recommended: stops anyone else from claiming the admin account first
 openssl rand -base64 32 | npx wrangler secret put ENCRYPTION_KEY   # encrypts the Claude API key and WeChat bot token
 npx wrangler r2 bucket create yaf-media   # WeChat images / voice (enable R2 in the dashboard first; or remove r2_buckets from wrangler.jsonc)
-npm run deploy
+npm run db:migrate:remote
+npm run deploy                         # refuses to run without database_id or with pending migrations
 ```
 
 With `SETUP_TOKEN` set, the setup page asks for it. Once the admin exists, `/api/auth/setup` is permanently disabled.
+
+### AI usage ring (optional)
+
+The bottom-right of the sidebar shows today's (UTC) Workers AI neuron usage for the whole account (10,000 free per day). It is visible to the admin only, and is hidden until configured.
+
+1. Find your account ID (a 32-character hex string), any of:
+   - run `npx wrangler whoami`; it is the Account ID column;
+   - in the Cloudflare dashboard home (Account Home), click "⋯" next to your account name → Copy account ID;
+   - open Workers & Pages; Account ID is under Account details in the right sidebar.
+
+   If you are on a paid plan, also run `npx wrangler secret put AI_PLAN` and enter `paid`; this only changes the label on the card.
+2. Create an API token with only the **Account Analytics: Read** permission. This link pre-fills the permission and name; select your account under "Account Resources", then create the token:
+   https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22account_analytics%22%2C%22type%22%3A%22read%22%7D%5D&name=yaf-analytics
+   If nothing is pre-filled: on the API Tokens page, go to Create Token → Create Custom Token and pick Account / Account Analytics / Read.
+3. Store both the account ID and the token as secrets, then redeploy:
+   ```bash
+   npx wrangler secret put CF_ACCOUNT_ID
+   npx wrangler secret put CF_ANALYTICS_TOKEN
+   npm run deploy
+   ```
+   For local development, add `CF_ACCOUNT_ID=...` and `CF_ANALYTICS_TOKEN=...` to `.dev.vars` (git-ignored).
+
+   Do not put the account ID in `wrangler.jsonc`: it would be published with the repo.
+
+Usage is grouped by modelId into embeddings / image descriptions / insights / classification; all other models count as "other". Results are cached for 5 minutes.
 
 ## MCP
 
@@ -125,6 +159,7 @@ migrations/      # D1 schema
 | GET / POST | `/api/search/status`, `/api/search/reindex` | Index status / backfill (`{full:true}` rebuilds) |
 | GET | `/api/tags` | Tags with counts |
 | GET | `/api/stats?tz=` | Stats and heatmap |
+| GET | `/api/usage/ai` | Today's Workers AI neuron usage (admin; `usage: null` when not configured) |
 | GET | `/api/export?tag=&format=md\|json` | Export |
 | POST | `/api/auth/password` | Change password (web session only) |
 | GET / POST | `/api/auth/sessions`, `/api/auth/sessions/revoke-others` | Session count / sign out other devices |
@@ -145,14 +180,20 @@ migrations/      # D1 schema
 
 Except for token management and password changes, `/api/*` also accepts `Authorization: Bearer yaf_pat_…`, checked against scopes: `memos:read`, `memos:write`, `export`, `insights:read`.
 
+## Upgrading
+
+Tell your agent: *"Read docs/AGENT-UPGRADE.md in the yaf folder and upgrade me to the latest release."* It reads [CHANGELOG.md](CHANGELOG.md), records a database restore point (D1 Time Travel) and the current Worker version, merges the new release into your `deploy` branch, creates anything new that is needed, applies the migrations, deploys, and checks the result. Every step can be undone. Migrations only ever add; the previous version's code keeps working on the new schema, so rolling back the code is always safe. See [docs/AGENT-UPGRADE.md](docs/AGENT-UPGRADE.md).
+
 ## Versions
 
 | Tag | Contents |
 | --- | --- |
 | [`v0.1.0`](https://github.com/uxgnod/yaf/tree/v0.1.0) | The original simple version: memos, Markdown, tags, keyword search, export, themes, heatmap. No AI, API or WeChat |
 | [`v0.2.0`](https://github.com/uxgnod/yaf/tree/v0.2.0) | AI-native: hybrid search, related notes, insights, MCP, API tokens, CLI, WeChat capture |
+| [`v0.3.0`](https://github.com/uxgnod/yaf/tree/v0.3.0) | Lenses (todo / private) and private-memo masking |
+| [`v0.4.0`](https://github.com/uxgnod/yaf/tree/v0.4.0) | AI usage ring, deploy preflight, agent install / upgrade guides |
 
-Development plans and the decision log (in Chinese) are in [`docs/`](docs/).
+Per-version upgrade notes: [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

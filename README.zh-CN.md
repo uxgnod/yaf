@@ -4,7 +4,7 @@
 
 **yaf 是一个开源、可自部署的 [flomo](https://flomoapp.com) 复刻**，跑在 Cloudflare 上，用免费套餐就能运行，并且从一开始就按「AI 原生」来设计。
 
-> **仍在开发中。** 功能、数据库结构和接口都可能变化，升级前请先看提交记录。想要最初那个没有 AI 的简单版本，可以用 [`v0.1.0`](https://github.com/uxgnod/yaf/tree/v0.1.0) 标签。
+> **仍在开发中。** 功能和接口仍可能变化，升级前请先看 [CHANGELOG.md](CHANGELOG.md)。想要最初那个没有 AI 的简单版本，可以用 [`v0.1.0`](https://github.com/uxgnod/yaf/tree/v0.1.0) 标签。
 
 - **开源**：代码以 [AGPL-3.0](LICENSE) 授权，可以自由修改、fork；名称的使用见 [TRADEMARKS.md](TRADEMARKS.md)。
 - **自部署**：数据在你自己的 Cloudflare 账号里，一个 Worker 包含全部前后端。
@@ -51,21 +51,55 @@ npm run dev                # http://localhost:5173
 
 第一次打开会进入「创建管理员账号」页面。
 
-## 部署到 Cloudflare
+## 安装到 Cloudflare
+
+**让 AI agent 来装**（Claude Code、Codex 等）。在 agent 里打开一个空文件夹，对它说：
+
+> 阅读 https://raw.githubusercontent.com/uxgnod/yaf/main/docs/AGENT-INSTALL.md ，帮我安装 yaf。
+
+agent 会检查环境、引导你登录 Cloudflare、创建数据库和搜索索引、设置 secret、部署，最后把地址交给你。你只需要在浏览器里点「Allow」并设置管理员密码。详见 [docs/AGENT-INSTALL.md](docs/AGENT-INSTALL.md)。
+
+**或者手动装。** 请在自己的 `deploy` 分支上操作，升级时才不会冲突（数据库 id 是仓库里唯一的个人信息，不要提交到 `main`）：
 
 ```bash
+git checkout -b deploy $(git tag --sort=-v:refname | head -1)   # 最新发布版
 npx wrangler login
-npx wrangler d1 create yaf-db          # 把返回的 database_id 填到 wrangler.jsonc
+npx wrangler d1 create yaf-db          # 把返回的 database_id 填到 wrangler.jsonc，在 deploy 分支提交
 npx wrangler vectorize create yaf-memos --dimensions=1024 --metric=cosine
 npx wrangler vectorize create-metadata-index yaf-memos --propertyName=userId --type=string
-npm run db:migrate:remote
 npx wrangler secret put SETUP_TOKEN    # 推荐：防止部署后被他人抢先注册 admin
 openssl rand -base64 32 | npx wrangler secret put ENCRYPTION_KEY   # 加密 Claude API key、微信 bot_token
 npx wrangler r2 bucket create yaf-media   # 微信图片 / 语音原文件（需先在控制台开通 R2；不用的话删掉 wrangler.jsonc 里的 r2_buckets）
-npm run deploy
+npm run db:migrate:remote
+npm run deploy                         # 没有 database_id 或有未应用的迁移时会拒绝执行
 ```
 
 设置了 `SETUP_TOKEN` 后，初始化页面需要填写这个口令。admin 创建完成后，`/api/auth/setup` 将永久失效。
+
+### AI 用量圆环（可选）
+
+侧栏右下角显示今天（UTC）整个账户的 Workers AI neurons 用量（每天免费 10,000）。只有 admin 能看到；不配置就不显示。
+
+1. 找到你的账户 ID（32 位十六进制字符串），任选一种：
+   - 命令行运行 `npx wrangler whoami`，表格里的 Account ID 就是；
+   - 打开 Cloudflare 控制台首页（Account Home），点账户名旁边的「⋯」→ Copy account ID；
+   - 进入 Workers & Pages，右侧栏的 Account details 里有 Account ID。
+
+   用的是付费套餐就再运行 `npx wrangler secret put AI_PLAN` 并输入 `paid`，这只影响卡片上的文字。
+2. 创建一个只有 **Account Analytics: Read** 权限的 API Token。打开下面这个链接，权限和名称会自动填好；把「Account Resources」选成你的账户，然后创建：
+   https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22account_analytics%22%2C%22type%22%3A%22read%22%7D%5D&name=yaf-analytics
+   如果没有自动填好：在 API Tokens 页面依次点 Create Token → Create Custom Token，权限选 Account / Account Analytics / Read。
+3. 把账户 ID 和 Token 都写成 secret，然后重新部署：
+   ```bash
+   npx wrangler secret put CF_ACCOUNT_ID
+   npx wrangler secret put CF_ANALYTICS_TOKEN
+   npm run deploy
+   ```
+   本地开发时，把 `CF_ACCOUNT_ID=...` 和 `CF_ANALYTICS_TOKEN=...` 加进 `.dev.vars`（已被 git 忽略）。
+
+   不要把账户 ID 写进 `wrangler.jsonc`：它会随仓库公开。
+
+用量按 modelId 归到向量 / 图片描述 / 洞察 / 分类，其余模型算「其他」；接口结果缓存 5 分钟。
 
 ## MCP
 
@@ -124,6 +158,7 @@ migrations/      # D1 schema
 | POST / PATCH / DELETE | `/api/memos[/:id]` | 增 / 改 / 删 |
 | GET | `/api/tags` | 标签及计数 |
 | GET | `/api/stats?tz=` | 统计与热力图 |
+| GET | `/api/usage/ai` | 今日 Workers AI neurons 用量（admin；未配置时 `usage: null`） |
 | GET | `/api/export?tag=&format=md\|json` | 导出 |
 | GET | `/api/memos/:id` | 单条 memo |
 | POST | `/api/auth/password` | 修改密码（仅网页会话） |
@@ -145,14 +180,21 @@ migrations/      # D1 schema
 
 除 Token 管理、修改密码外，`/api/*` 也接受 `Authorization: Bearer yaf_pat_…`，按 scope 校验：`memos:read`、`memos:write`、`export`、`insights:read`。
 
+## 升级
+
+对 agent 说：*「阅读 yaf 文件夹里的 docs/AGENT-UPGRADE.md，把我升级到最新发布版。」* 它会读 [CHANGELOG.md](CHANGELOG.md)，记录数据库恢复点（D1 Time Travel）和当前 Worker 版本，把新版本合并进你的 `deploy` 分支，创建新增的必要资源，应用迁移、部署并检查结果。每一步都能撤销。迁移只增不改，上一版代码在新表结构上依然能跑，所以回滚代码永远是安全的。详见 [docs/AGENT-UPGRADE.md](docs/AGENT-UPGRADE.md)。
+
 ## 版本
 
 | 标签 | 内容 |
 | --- | --- |
 | [`v0.1.0`](https://github.com/uxgnod/yaf/tree/v0.1.0) | 最初的简单版：memo、Markdown、标签、关键词搜索、导出、主题、热力图。没有 AI、API 和微信 |
 | [`v0.2.0`](https://github.com/uxgnod/yaf/tree/v0.2.0) | AI 原生：混合检索、相关笔记、洞察、MCP、API Token、CLI、微信收录 |
+| [`v0.3.0`](https://github.com/uxgnod/yaf/tree/v0.3.0) | 视图（待办 / 隐私）和隐私 memo 遮挡 |
+| [`v0.4.0`](https://github.com/uxgnod/yaf/tree/v0.4.0) | AI 用量圆环、部署前检查、agent 安装 / 升级指引 |
 
-开发计划和决策记录见 [`docs/`](docs/)。
+每个版本的升级说明见 [CHANGELOG.md](CHANGELOG.md)。
+
 
 ## 许可证
 
