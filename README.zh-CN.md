@@ -195,6 +195,9 @@ migrations/      # D1 schema
 
 每个版本的升级说明见 [CHANGELOG.md](CHANGELOG.md)。
 
+## 社区
+
+yaf 的分享与讨论发生在 [LINUX DO](https://linux.do) 社区，感谢佬友们的反馈。
 
 ## 许可证
 

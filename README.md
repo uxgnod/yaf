@@ -195,6 +195,10 @@ Tell your agent: *"Read docs/AGENT-UPGRADE.md in the yaf folder and upgrade me t
 
 Per-version upgrade notes: [CHANGELOG.md](CHANGELOG.md).
 
+## Community
+
+yaf is shared and discussed on the [LINUX DO](https://linux.do) community.
+
 ## License
 
 - The project is licensed under the [GNU AGPL-3.0](LICENSE). This applies to every version in this repository, including early commits that predate the LICENSE file.
