@@ -4,6 +4,8 @@ English · [中文](README.zh-CN.md)
 
 **yaf is an open-source, self-hosted clone of [flomo](https://flomoapp.com)**, the quick-capture memo app. It runs on Cloudflare, works on the free plan, and is designed to be AI-native from the start.
 
+<p align="center"><img src="docs/screenshots/hero.png" alt="yaf: nested tags, heatmap, Markdown editor, and notes in Chinese and English" width="860"></p>
+
 > **Work in progress.** Features and APIs may still change; read [CHANGELOG.md](CHANGELOG.md) before upgrading. If you prefer the original, simple version without AI, use the [`v0.1.0`](https://github.com/uxgnod/yaf/tree/v0.1.0) tag.
 
 - **Open source**: the code is licensed under [AGPL-3.0](LICENSE). Modify and fork it freely; see [TRADEMARKS.md](TRADEMARKS.md) for use of the name.
@@ -14,6 +16,97 @@ English · [中文](README.zh-CN.md)
   - Insights review your memos on a schedule and summarize recurring themes and open questions, with every point linked back to the source memos.
   - A built-in MCP server lets AI assistants such as Claude Code search and write memos directly.
   - Scoped API tokens, the `yaf` command-line tool and export make it easy to hand your notes to any AI.
+
+## Contents
+
+- [Screenshots](#screenshots)
+- [Tech stack](#tech-stack)
+- [Features](#features)
+- [Local development](#local-development)
+- [Install on Cloudflare](#install-on-cloudflare)
+  - [AI usage ring (optional)](#ai-usage-ring-optional)
+- [MCP](#mcp)
+- [CLI](#cli)
+- [Project layout](#project-layout)
+- [API](#api)
+- [Upgrading](#upgrading)
+- [Versions](#versions)
+- [License](#license)
+
+## Screenshots
+
+Every screenshot is a real, locally running yaf with demo data: the notes of a travel writer researching a book on the Balkans (Belgrade, Sarajevo, Mostar, Tirana), written in Chinese and English.
+
+### Capture from anywhere
+
+<p><img src="docs/screenshots/capture-photos.png" alt="WeChat photos attached to memos" width="860"></p>
+
+Photos you send to WeChat become memos. The small icon marks the source.
+
+<p><img src="docs/screenshots/capture.png" alt="A WeChat voice memo with transcript, and an image memo" width="860"></p>
+
+Voice messages keep their transcript and play in the browser.
+
+<p><img src="docs/screenshots/capture-agents.png" alt="Memos written by Claude Code (MCP) and by an API token" width="860"></p>
+
+Memos can also come from Claude Code over MCP, from scripts through a scoped API token, or from the `yaf` CLI.
+
+### Find it again
+
+<p><img src="docs/screenshots/search.png" alt="Hybrid search for 废墟 (ruins): keyword and semantic matches" width="860"></p>
+
+Searching "废墟" (ruins) finds two memos that contain the word (highlighted) and two that never use it but mean the same thing (semantic score).
+
+<p><img src="docs/screenshots/search-cross-language.png" alt="An English question finds Chinese memos" width="860"></p>
+
+The embedding model is multilingual: an English question finds the Chinese memos that answer it.
+
+<p><img src="docs/screenshots/related.png" alt="Related notes under a memo" width="860"></p>
+
+Every memo can show related notes, ranked by similarity. Here the Latin Bridge and the Mostar bridge find each other.
+
+### Insights
+
+<p><img src="docs/screenshots/insights.png" alt="A 30-day insight report with citations" width="860"></p>
+
+A scheduled review of your memos. Each point is a claim backed by evidence, with dated citations that link to the source memos. Reports are written in Markdown (quotes, lists, code); objective numbers (tag counts, unchecked tasks) are computed in code and handed to the model.
+
+<p><img src="docs/screenshots/insights-citation.png" alt="Clicking a citation opens the source memo" width="860"></p>
+
+Click a citation to read the original memo.
+
+<p><img src="docs/screenshots/insight-plans.png" alt="Insight plan: schedule, window, tag scope, perspective, extra prompt" width="640"></p>
+
+A plan sets the schedule, time window, tag scope, perspective and model. The extra prompt tells the model who you are and what to look for.
+
+### Lenses, themes, mobile
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/lens-todo.png" alt="Todo lens"></td>
+<td width="50%"><img src="docs/screenshots/lens-private.png" alt="Private lens with masked credentials"></td>
+</tr>
+<tr>
+<td>Lens: todo. Memos that record something you have to do are picked out automatically.</td>
+<td>Lens: private. Passwords and codes are masked, and kept out of search, tokens and exports.</td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td width="62%"><img src="docs/screenshots/dark.png" alt="Dark theme"></td>
+<td width="19%"><img src="docs/screenshots/mobile.png" alt="Mobile timeline"></td>
+<td width="19%"><img src="docs/screenshots/mobile-insights.png" alt="Mobile insights"></td>
+</tr>
+</table>
+
+Light, dark or system theme, and a layout that works on a phone.
+
+<p><img src="docs/screenshots/settings-api.png" alt="API tokens, MCP and CLI setup" width="860"></p>
+
+Scoped, revocable API tokens, with copy-paste setup for MCP and the CLI.
+
+<sub>Photos in the screenshots are from Wikimedia Commons: [Bosnian coffee](https://commons.wikimedia.org/wiki/File:Bosnian_coffee_serving_on_a_outdoor_table_in_Blagaj-bs.jpg) by Minja Klarić (CC BY-SA 4.0), [Latin Bridge](https://commons.wikimedia.org/wiki/File:Sarajevo_Lateinerbr%C3%BCcke_1.JPG) and [Baščaršija](https://commons.wikimedia.org/wiki/File:Sarajevo_%E2%80%93_Ba%C5%A1%C4%8Dar%C5%A1ija_View_from_Zlati%C5%A1te_1.jpg) by Julian Nyča (CC BY-SA 3.0), [Spinach burek in Kruja](https://commons.wikimedia.org/wiki/File:Spinach_burek_in_Kruja.jpg) by Arianit (CC BY-SA 4.0). The screenshots themselves are not part of the AGPL-licensed code.</sub>
 
 ## Tech stack
 

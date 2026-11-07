@@ -4,6 +4,8 @@
 
 **yaf 是一个开源、可自部署的 [flomo](https://flomoapp.com) 复刻**，跑在 Cloudflare 上，用免费套餐就能运行，并且从一开始就按「AI 原生」来设计。
 
+<p align="center"><img src="docs/screenshots/hero.png" alt="yaf：层级标签、热力图、Markdown 编辑器，中英文笔记" width="860"></p>
+
 > **仍在开发中。** 功能和接口仍可能变化，升级前请先看 [CHANGELOG.md](CHANGELOG.md)。想要最初那个没有 AI 的简单版本，可以用 [`v0.1.0`](https://github.com/uxgnod/yaf/tree/v0.1.0) 标签。
 
 - **开源**：代码以 [AGPL-3.0](LICENSE) 授权，可以自由修改、fork；名称的使用见 [TRADEMARKS.md](TRADEMARKS.md)。
@@ -14,6 +16,97 @@
   - 洞察按计划回顾你的 memo，总结反复出现的主题和值得追问的问题，每条结论都附带原文引用；
   - 内置 MCP 服务器，Claude Code 等 AI 助手可以直接搜索和记录 memo；
   - API Token 按权限授权，配合命令行工具 `yaf` 和导出功能，方便交给任何 AI 使用。
+
+## 目录
+
+- [截图](#截图)
+- [技术栈](#技术栈)
+- [功能](#功能)
+- [本地开发](#本地开发)
+- [安装到 Cloudflare](#安装到-cloudflare)
+  - [AI 用量圆环（可选）](#ai-用量圆环可选)
+- [MCP](#mcp)
+- [CLI](#cli)
+- [结构](#结构)
+- [API](#api)
+- [升级](#升级)
+- [版本](#版本)
+- [许可证](#许可证)
+
+## 截图
+
+所有截图都来自本地运行的 yaf 和演示数据：一位旅行作家在为一本关于巴尔干（贝尔格莱德、萨拉热窝、莫斯塔尔、地拉那）的书做功课，笔记中英文混写。
+
+### 随处记录
+
+<p><img src="docs/screenshots/capture-photos.png" alt="微信发来的照片成为 memo" width="860"></p>
+
+发给微信的照片会变成 memo，小图标标出它从哪里来。
+
+<p><img src="docs/screenshots/capture.png" alt="带转写的微信语音 memo 和图片 memo" width="860"></p>
+
+语音保留转写，可以在浏览器里播放。
+
+<p><img src="docs/screenshots/capture-agents.png" alt="Claude Code（MCP）和 API Token 写入的 memo" width="860"></p>
+
+memo 也可以来自 Claude Code（MCP）、带权限的 API Token 脚本，或者命令行 `yaf`。
+
+### 找回来
+
+<p><img src="docs/screenshots/search.png" alt="混合搜索「废墟」：关键词和语义命中" width="860"></p>
+
+搜「废墟」：两条含这个词（高亮），另外两条一次都没写过这个词，但意思相近（语义分数）。
+
+<p><img src="docs/screenshots/search-cross-language.png" alt="英文问句搜到中文 memo" width="860"></p>
+
+向量模型是多语言的：用英文提问，也能找到回答它的中文 memo。
+
+<p><img src="docs/screenshots/related.png" alt="memo 下的相关笔记" width="860"></p>
+
+每条 memo 都能展开相关笔记，按相似度排序。拉丁桥和莫斯塔尔老桥就这样互相找到了对方。
+
+### 洞察
+
+<p><img src="docs/screenshots/insights.png" alt="带引用的 30 天洞察报告" width="860"></p>
+
+按计划回顾你的 memo。每一条都是一个有证据的论断，附带带日期的引用，点进去就是原文。正文支持 Markdown（引用、列表、代码）；标签频次、未勾选任务这类客观数字由代码算好再交给模型。
+
+<p><img src="docs/screenshots/insights-citation.png" alt="点击引用打开原文" width="860"></p>
+
+点击引用，直接看原始 memo。
+
+<p><img src="docs/screenshots/insight-plans.png" alt="洞察计划：频率、窗口、标签范围、视角、补充提示词" width="640"></p>
+
+计划决定频率、时间窗口、标签范围、视角和模型。补充提示词用来告诉模型你是谁、想看什么。
+
+### 视图、主题、手机
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/lens-todo.png" alt="待办视图"></td>
+<td width="50%"><img src="docs/screenshots/lens-private.png" alt="隐私视图，凭据被遮挡"></td>
+</tr>
+<tr>
+<td>视图：待办。记录了要做的事的 memo 会被自动挑出来。</td>
+<td>视图：隐私。密码、口令被遮挡，也不会进入搜索、Token 和导出。</td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td width="62%"><img src="docs/screenshots/dark.png" alt="暗色主题"></td>
+<td width="19%"><img src="docs/screenshots/mobile.png" alt="手机上的时间线"></td>
+<td width="19%"><img src="docs/screenshots/mobile-insights.png" alt="手机上的洞察"></td>
+</tr>
+</table>
+
+亮色、暗色、跟随系统，手机上也能用。
+
+<p><img src="docs/screenshots/settings-api.png" alt="API Token、MCP 和 CLI 接入" width="860"></p>
+
+按权限授权、随时可撤销的 API Token，MCP 和 CLI 的接入命令可以直接复制。
+
+<sub>截图中的照片来自 Wikimedia Commons：[波斯尼亚咖啡](https://commons.wikimedia.org/wiki/File:Bosnian_coffee_serving_on_a_outdoor_table_in_Blagaj-bs.jpg)，作者 Minja Klarić（CC BY-SA 4.0）；[拉丁桥](https://commons.wikimedia.org/wiki/File:Sarajevo_Lateinerbr%C3%BCcke_1.JPG)和[巴什察尔希亚](https://commons.wikimedia.org/wiki/File:Sarajevo_%E2%80%93_Ba%C5%A1%C4%8Dar%C5%A1ija_View_from_Zlati%C5%A1te_1.jpg)，作者 Julian Nyča（CC BY-SA 3.0）；[克鲁亚的菠菜 burek](https://commons.wikimedia.org/wiki/File:Spinach_burek_in_Kruja.jpg)，作者 Arianit（CC BY-SA 4.0）。截图本身不属于 AGPL 授权的代码。</sub>
 
 ## 技术栈
 
