@@ -6,3 +6,4 @@ dist
 .claude/
 # 个人开发计划与决策记录，只留在本地
 docs/dev/
+.DS_Store
