@@ -637,6 +637,7 @@ label.check .mono { margin-left: auto; }
 .insight-item:first-of-type { border-top: 0; padding-top: 0; }
 .insight-item-title { font-weight: 600; color: var(--text); }
 .insight-item-detail { margin-top: 2px; color: var(--text-2); font-size: 13.5px; line-height: 1.7; }
+.insight-item-detail.markdown p { margin: 0 0 6px; }
 .cites { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .cite {
   display: inline-flex; align-items: center; gap: 6px; max-width: 100%;

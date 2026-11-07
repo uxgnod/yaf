@@ -15,7 +15,7 @@ export const WORKERS_AI_MODEL = "@cf/qwen/qwen3-30b-a3b-fp8";
 export const CLAUDE_MODEL = "claude-sonnet-5-5";
 const MAX_WINDOW = 150;
 const MAX_HISTORY = 30;
-const MEMO_CHARS = 400;
+const MEMO_CHARS = 500;
 const SINGLE_CLUSTER_MAX = 24;
 
 export interface PlanConfig {
@@ -43,21 +43,22 @@ export interface Material {
   /** 每个元素是一组 ref */
   clusters: string[][];
   feedbackHint: string;
+  facts: string;
 }
 
 // ---------- 报告结构 ----------
 
 const refs = z.array(z.string()).describe("引用的 memo 编号，如 W3、H2；至少 1 个");
-const item = z.object({ title: z.string(), detail: z.string(), refs });
+const item = z.object({ title: z.string(), detail: z.string().describe("可用 Markdown：用 > 引用 memo 里的原话，用 - 或 1. 列要点或步骤，命令、代码、公式用 `行内代码` 或 ``` 代码块，**加粗**关键词；不要用标题（#）和表格；短的内容不必硬加格式"), refs });
 
 export const ReportSchema = z.object({
   title: z.string().describe("一句话标题，不超过 20 字"),
-  summary: z.string().describe("2–4 句话的总体摘要"),
+  summary: z.string().describe("2–4 句话的总体摘要。可用 Markdown：用 > 引用 memo 里的原话，用 - 或 1. 列要点或步骤，命令、代码、公式用 `行内代码` 或 ``` 代码块，**加粗**关键词；不要用标题（#）和表格；短的内容不必硬加格式"),
   themes: z.array(item).describe("反复出现的主题（2–4 条）"),
   connections: z.array(item).describe("新的连接：近期 memo 与历史 memo、或不同主题之间的关联（0–3 条）"),
   unfinished: z.array(item).describe("想做但还没做的事、悬而未决的计划（0–3 条）"),
   questions: z
-    .array(z.object({ question: z.string(), why: z.string(), refs }))
+    .array(z.object({ question: z.string(), why: z.string().describe("可用 Markdown：用 > 引用 memo 里的原话，用 - 或 1. 列要点或步骤，命令、代码、公式用 `行内代码` 或 ``` 代码块，**加粗**关键词；不要用标题（#）和表格；短的内容不必硬加格式"), refs }))
     .describe("值得继续追问自己的问题（1–3 条）"),
 });
 export type Report = z.infer<typeof ReportSchema>;
@@ -124,7 +125,7 @@ export async function gatherMaterial(env: Env, userId: string, plan: PlanConfig,
   const scores = new Map<string, number>();
   for (const m of window.slice(-20)) {
     try {
-      const { matches } = await env.VECTORS.queryById(m.id, { topK: 6, filter: { userId } });
+      const { matches } = await env.VECTORS.queryById(m.id, { topK: 20, filter: { userId } });
       for (const hit of matches) {
         if (windowIds.has(hit.id) || hit.score < RELATED_MIN) continue;
         scores.set(hit.id, Math.max(scores.get(hit.id) ?? 0, hit.score));
@@ -155,7 +156,8 @@ export async function gatherMaterial(env: Env, userId: string, plan: PlanConfig,
 
   const clusters = await clusterWindow(env, window);
   const feedbackHint = await loadFeedbackHint(env, userId, plan.id);
-  return { window, history, clusters, feedbackHint } satisfies Material;
+  const facts = buildFacts(windowRows, window);
+  return { window, history, clusters, feedbackHint, facts } satisfies Material;
 }
 
 async function loadFeedbackHint(env: Env, userId: string, planId: string | null) {
@@ -173,6 +175,43 @@ async function loadFeedbackHint(env: Env, userId: string, planId: string | null)
     liked.length ? `用户觉得有用的历史报告：${liked.join("、")}。` : "",
     disliked.length ? `用户觉得没用的历史报告：${disliked.join("、")}，避免类似的泛泛而谈。` : "",
   ].join("");
+}
+
+/** 客观线索：标签频次、前后半段对比、未勾选任务。数字由代码算，模型不必（也不该）自己数 */
+function buildFacts(rows: { content: string; created_at: number }[], window: MaterialMemo[]) {
+  if (!window.length) return "";
+  const day = (t: number) => new Date(t).toISOString().slice(5, 10);
+  const mid = window[Math.floor(window.length / 2)].createdAt;
+  const tags = new Map<string, { n: number; late: number }>();
+  for (const m of window) {
+    for (const t of new Set(m.tags)) {
+      const e = tags.get(t) ?? { n: 0, late: 0 };
+      e.n++;
+      if (m.createdAt >= mid) e.late++;
+      tags.set(t, e);
+    }
+  }
+  const top = [...tags.entries()]
+    .sort((a, b) => b[1].n - a[1].n)
+    .slice(0, 8)
+    .map(([t, e]) => `#${t} ${e.n} 条（后半段 ${e.late} 条）`);
+  const open: string[] = [];
+  let done = 0;
+  rows.forEach((r, i) => {
+    for (const line of r.content.split("\n")) {
+      const m = line.match(/^\s*[-*+]\s*\[( |x|X)\]\s*(.+)$/);
+      if (!m) continue;
+      if (m[1] === " ") open.push(`${window[i].ref}（${day(r.created_at)}）${m[2].trim().slice(0, 60)}`);
+      else done++;
+    }
+  });
+  return [
+    `共 ${window.length} 条 memo，${day(window[0].createdAt)} 至 ${day(window[window.length - 1].createdAt)}。`,
+    top.length ? `高频标签：${top.join("；")}。` : "",
+    open.length ? `未勾选的任务（${open.length} 项，另有 ${done} 项已完成）：\n${open.slice(0, 10).map((o) => "- " + o).join("\n")}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 // ---------- 聚类（余弦 k-means） ----------
@@ -276,7 +315,14 @@ const SYSTEM = `你是用户的个人笔记分析助手。用户用 flomo 式的
 规则：
 - 每条结论都必须引用支撑它的 memo 编号（如 W3、H2），只能使用材料里出现过的编号，不能编造。
 - 具体、克制，引用原文里的细节；不要空洞的鸡汤和泛泛的建议。
-- 用中文，用第二人称「你」称呼用户。`;
+- 用中文，用第二人称「你」称呼用户。
+- 正文（摘要、detail、why）可以用 Markdown，按内容需要选用，不要为了好看硬加：
+  - 引用 memo 里的原话，用 > 引用块，每处不超过 2 句；
+  - 并列的要点、前后变化用 - 列表；有先后顺序的步骤、下一步行动用 1. 列表；
+  - memo 里出现的命令、代码、函数名、SQL、公式，用 \`行内代码\` 或 \`\`\` 代码块原样保留；
+  - 关键词可以 **加粗**，一段里不超过两处；
+  - 不要用标题（#）、表格、分隔线；标题字段（title、question）保持纯文本。
+- 编号（W3、H2）只能放在 refs 里，不要写进 Markdown 的引用块或列表里。`;
 
 export async function summarizeCluster(env: Env, userId: string, plan: PlanConfig, material: Material, refsInCluster: string[]) {
   const set = new Set(refsInCluster);
@@ -307,6 +353,7 @@ export async function writeReport(
     `分析视角：${PERSPECTIVE[plan.perspective] ?? PERSPECTIVE.balanced}`,
     plan.extraPrompt ? `用户的补充要求：${plan.extraPrompt}` : "",
     material.feedbackHint,
+    material.facts ? `## 数据线索（代码统计，可直接引用）\n${material.facts}` : "",
     clusterSummaries.length > 1
       ? `## 各组 memo 的初步总结\n${clusterSummaries
           .map((c) => `### ${c.theme}\n${c.points.map((p) => `- ${p.text}（${p.refs.join("、")}）`).join("\n")}`)
@@ -329,16 +376,17 @@ export async function writeReport(
 }
 
 const REF = String.raw`\[?[WH]\d+\]?`;
-const REF_GROUP = new RegExp(String.raw`\s*[（(]\s*${REF}(?:\s*[/、,，;；\-–~至和与及]\s*${REF})*\s*[）)]`, "g");
-const REF_BARE = new RegExp(String.raw`\s*${REF}(?![\w])`, "g");
+const REF_GROUP = new RegExp(String.raw`[ \t]*[（(]\s*${REF}(?:\s*[/、,，;；\-–~至和与及]\s*${REF})*\s*[）)]`, "g");
+const REF_BARE = new RegExp(String.raw`[ \t]*${REF}(?![\w])`, "g");
 
-/** 去掉正文里的引用编号（W3、（W1/H2）等）；引用以链接形式单独展示 */
+/** 去掉正文里的引用编号（W3、（W1/H2）等）；引用以链接形式单独展示。
+ * 正文是 Markdown，所以只清理行内的空格，不碰换行和行首缩进 */
 export function stripRefs(text: string) {
   return text
     .replace(REF_GROUP, "")
     .replace(REF_BARE, "")
-    .replace(/\s*[（(][\s\-–~、,，/]*[）)]/g, "")
-    .replace(/\s{2,}/g, " ")
+    .replace(/[ \t]*[（(][\s\-–~、,，/]*[）)]/g, "")
+    .replace(/(\S)[ \t]{2,}/g, "$1 ")
     .trim();
 }
 
@@ -384,7 +432,10 @@ export function reportToMarkdown(title: string, c: InsightContent) {
   const section = (name: string, list: CheckedItem[]) => {
     if (!list.length) return;
     lines.push(`### ${name}`, "");
-    for (const it of list) lines.push(`- **${it.title}**：${it.detail}`);
+    for (const it of list) {
+      if (it.detail.includes("\n")) lines.push(`**${it.title}**`, "", it.detail, "");
+      else lines.push(`- **${it.title}**：${it.detail}`);
+    }
     lines.push("");
   };
   section("反复出现的主题", c.themes);

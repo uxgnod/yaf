@@ -127,7 +127,7 @@ function createServer(env: Env, ctx: ExecutionContext, user: User, scopes: Scope
       const c = ins.content;
       const cite = (ids: string[]) => ids.join(", ");
       const section = (name: string, items: { title: string; detail: string; memoIds: string[] }[]) =>
-        items.length ? `\n## ${name}\n` + items.map((it) => `- ${it.title}：${it.detail}（memo ${cite(it.memoIds)}）`).join("\n") : "";
+        items.length ? `\n## ${name}\n` + items.map((it) => `- ${it.title}：${it.detail.replace(/\n/g, "\n  ")}（memo ${cite(it.memoIds)}）`).join("\n") : "";
       return text(
         (id ? "" : `最近的报告：\n${head}\n\n---\n\n`) +
           `# ${ins.title}\n${c.summary}` +

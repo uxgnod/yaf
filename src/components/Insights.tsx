@@ -252,7 +252,7 @@ function InsightDetail({
         {items.map((it, i) => (
           <div key={i} className="insight-item">
             <div className="insight-item-title">{it.title}</div>
-            <div className="insight-item-detail">{it.detail}</div>
+            <Md className="insight-item-detail" text={it.detail} />
             {cites(it.memoIds)}
           </div>
         ))}
@@ -284,7 +284,7 @@ function InsightDetail({
           {c.stats.history > 0 && <> + {c.stats.history} 条相关历史</>} · {insight.model?.split("/").pop()}
         </div>
       </header>
-      <p className="insight-summary">{c.summary}</p>
+      <Md className="insight-summary" text={c.summary} />
       {section("反复出现的主题", c.themes)}
       {section("新的连接", c.connections)}
       {section("想做未做", c.unfinished)}
@@ -294,7 +294,7 @@ function InsightDetail({
           {c.questions.map((q, i) => (
             <div key={i} className="insight-item">
               <div className="insight-item-title">{q.question}</div>
-              {q.why && <div className="insight-item-detail">{q.why}</div>}
+              {q.why && <Md className="insight-item-detail" text={q.why} />}
               {cites(q.memoIds)}
             </div>
           ))}
@@ -319,6 +319,12 @@ function InsightDetail({
       </footer>
     </article>
   );
+}
+
+/** 洞察正文是 Markdown（引用、列表、代码等），和 memo 用同一套渲染与净化 */
+function Md({ text, className }: { text: string; className: string }) {
+  const html = useMemo(() => renderMarkdown(text), [text]);
+  return <div className={`markdown ${className}`} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 function MemoDialog({ id, onClose }: { id: string; onClose: () => void }) {
