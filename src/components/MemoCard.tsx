@@ -40,7 +40,7 @@ export function MemoCard({ memo, terms = [], onUpdate, onDelete, onLabel }: Prop
   const [left, setLeft] = useState(0);
   const [title, setTitle] = useState("");
   const shown = raw ?? memo.content;
-  const html = useMemo(() => renderMarkdown(shown, terms), [shown, terms]);
+  const html = useMemo(() => renderMarkdown(shown, terms, { tags: memo.tags }), [shown, terms, memo.tags]);
 
   useEffect(() => setRaw(null), [memo.content]);
   useEffect(() => {

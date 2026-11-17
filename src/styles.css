@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&family=Noto+Serif+SC:wght@400;500&display=swap");
 
 /* ---------- 主题变量（Linear 风格） ---------- */
 :root {
@@ -414,7 +414,25 @@ label input:focus, label select:focus { border-color: var(--accent); box-shadow:
 .markdown li { margin: 2px 0; }
 .markdown li > input[type="checkbox"] { margin: 0 6px 0 -18px; vertical-align: middle; }
 .markdown ul:has(> li > input[type="checkbox"]) { list-style: none; }
-.markdown blockquote { margin: 8px 0; padding: 2px 12px; border-left: 3px solid var(--border-strong); color: var(--muted); }
+/* 引用 = 摘抄：浅底圆角块 + 悬挂的大引号 + 衬线正文；最后一行「— 来源」落在右下角（见 markdown.ts 的 decorateQuotes） */
+.markdown blockquote {
+  position: relative; margin: 10px 0; padding: 14px 18px 12px 46px; border: 0; border-radius: 8px;
+  background: var(--surface-hover); color: var(--text);
+  font-family: "Noto Serif SC", "Songti SC", Georgia, serif; font-size: 15px; line-height: 1.9;
+}
+.markdown blockquote::before {
+  content: "\201C"; position: absolute; left: 14px; top: 4px; font: 400 44px/1 Georgia, serif;
+  color: color-mix(in srgb, var(--accent) 50%, transparent);
+}
+.markdown blockquote p { margin: 0 0 6px; }
+.markdown blockquote p:last-child { margin-bottom: 0; }
+.markdown .quote-from {
+  display: block; margin-top: 10px; text-align: right; font-family: Inter, -apple-system, "PingFang SC", sans-serif;
+  font-size: 12px; line-height: 1.5; color: var(--muted);
+}
+.markdown .quote-from.loose { text-align: left; margin: 6px 0 8px; }
+.markdown .quote-from a { color: var(--text-2); text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
+.markdown .quote-from a:hover { color: var(--accent); }
 .markdown code {
   font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px;
   background: var(--code-bg); padding: 1px 5px; border-radius: 4px;
