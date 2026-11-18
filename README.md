@@ -112,7 +112,7 @@ Scoped, revocable API tokens, with copy-paste setup for MCP and the CLI.
 
 - **Runtime**: Cloudflare Workers (Hono) + Static Assets (React SPA), deployed as a single Worker
 - **Storage**: D1 (SQLite), Vectorize (embeddings), R2 (attachments, optional), Durable Objects (WeChat long polling)
-- **AI**: Workers AI (`@cf/baai/bge-m3` embeddings, `qwen3-30b-a3b` insights, `mistral-small-3.1` image descriptions) or Claude (bring your own key), through AI Gateway. Workflows handle re-indexing and insight generation; a Cron trigger runs every 15 minutes for due plans and missing embeddings
+- **AI**: Workers AI (`@cf/baai/bge-m3` embeddings, `qwen3.8-27b` / selectable model for insights, `qwen3.8-27b` image descriptions, `clef-flash` lenses) or Claude (bring your own key), through AI Gateway. Workflows handle re-indexing and insight generation; a Cron trigger runs every 15 minutes for due plans and missing embeddings
 - **Frontend**: React + Vite (`@cloudflare/vite-plugin`, so local dev runs inside workerd)
 - **Markdown**: marked (GFM) + DOMPurify
 
@@ -263,7 +263,7 @@ migrations/      # D1 schema
 | POST | `/api/insights/plans/:id/run` | Generate now |
 | GET | `/api/insights`, `/api/insights/:id` | Reports (with unread count) / detail |
 | POST | `/api/insights/:id/feedback`, `/api/insights/:id/save` | Feedback / save as memo |
-| GET / PUT | `/api/settings/ai` | Claude API key status / set |
+| GET / PUT | `/api/settings/ai` | Workers AI insight model and Claude API key settings |
 | GET / PUT | `/api/settings/auto-tags` | Automatic tags per source (CLI / API / MCP) |
 | GET / DELETE | `/api/wechat` | WeChat connection status / unbind |
 | POST / GET | `/api/wechat/qrcode`, `/api/wechat/qrcode/status` | Get a QR code / poll scan status (long polling) |
@@ -285,6 +285,7 @@ Tell your agent: *"Read docs/AGENT-UPGRADE.md in the yaf folder and upgrade me t
 | [`v0.2.0`](https://github.com/uxgnod/yaf/tree/v0.2.0) | AI-native: hybrid search, related notes, insights, MCP, API tokens, CLI, WeChat capture |
 | [`v0.3.0`](https://github.com/uxgnod/yaf/tree/v0.3.0) | Lenses (todo / private) and private-memo masking |
 | [`v0.4.0`](https://github.com/uxgnod/yaf/tree/v0.4.0) | AI usage ring, deploy preflight, agent install / upgrade guides |
+| [`v0.4.1`](https://github.com/uxgnod/yaf/tree/v0.4.1) | Selectable Workers AI insight model & deprecation warning, Markdown insights, excerpt quotes |
 
 Per-version upgrade notes: [CHANGELOG.md](CHANGELOG.md).
 

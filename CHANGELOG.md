@@ -4,6 +4,18 @@ Each entry lists what an upgrade needs. Upgrade procedure: [docs/AGENT-UPGRADE.m
 
 Legend: **Migrations** = D1 files applied by `npm run db:migrate:remote`. **Resources** = Cloudflare things to create before deploying. **Secrets** = `wrangler secret put`. **Action required** = anything else.
 
+## v0.4.1
+
+> **Recommended upgrade before 2026-11-20**: Cloudflare is retiring `@cf/qwen/qwen3-30b-a3b-fp8` (the previous default Workers AI insight model) on **November 20, 2026**, after which requests to it fail with `HTTP 410 Gone` (`5028`).
+
+- Selectable Workers AI insight model (Settings › Insights & Search › Insight model): pick from active Free Plan models (`@cf/qwen/qwen3.8-27b`, `@cf/google/gemma-4-26b-a4b-it`, `@cf/zai-org/glm-4.7-flash`, `@cf/moonshotai/kimi-k2.5`, etc.) or Paid Plan models (`@cf/deepseek-ai/deepseek-v4.1-flash-1017`, `@cf/zai-org/glm-5.3`), and toggle thinking mode (`enable_thinking`) when supported. New installs default to `@cf/qwen/qwen3.8-27b` (thinking off); existing installs with active insight plans keep their current setting and show a deprecation warning until switched.
+- Insights now write Markdown (quotes, lists, inline code), recall up to 20 related history memos per note, and receive computed tag counts and open tasks as data facts.
+- Quotes (`>`) render as excerpts: a tinted block with a hanging quote mark and serif text; a last line starting with `— ` or `——` becomes the source line at the bottom right. `#tags` in a memo body are only linked when they are real tags of that memo.
+- Migrations: none
+- Resources: none
+- Secrets: none
+- **Action required** (existing Insights users): after deploying `v0.4.1`, open **Settings › 洞察与搜索 › 洞察模型**, click **更换模型**, and switch from `@cf/qwen/qwen3-30b-a3b-fp8` to `@cf/qwen/qwen3.8-27b` or `@cf/google/gemma-4-26b-a4b-it`.
+
 ## v0.4.0
 
 - Sidebar AI usage ring: today's Workers AI neurons for the account, admin only. Hidden until configured.

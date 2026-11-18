@@ -112,7 +112,7 @@ memo 也可以来自 Claude Code（MCP）、带权限的 API Token 脚本，或�
 
 - **运行时**：Cloudflare Workers（Hono 路由）+ Static Assets（React SPA），同一个 Worker 部署
 - **存储**：D1（SQLite）、Vectorize（向量）、R2（附件，可选）、Durable Objects（微信长连接）
-- **AI**：Workers AI（`@cf/baai/bge-m3` 向量、`qwen3-30b-a3b` 洞察、`mistral-small-3.1` 图片描述）或 Claude（用户自带 key），经 AI Gateway；Workflows 做补算和洞察生成，Cron 每 15 分钟检查到期计划、补算向量
+- **AI**：Workers AI（`@cf/baai/bge-m3` 向量、`qwen3.8-27b` 等可选洞察模型、`qwen3.8-27b` 图片描述、`clef-flash` 视图判定）或 Claude（用户自带 key），经 AI Gateway；Workflows 做补算和洞察生成，Cron 每 15 分钟检查到期计划、补算向量
 - **前端**：React + Vite（`@cloudflare/vite-plugin`，本地开发即在 workerd 中运行）
 - **Markdown**：marked（GFM）+ DOMPurify 净化
 
@@ -263,7 +263,7 @@ migrations/      # D1 schema
 | POST | `/api/insights/plans/:id/run` | 立即生成 |
 | GET | `/api/insights`、`/api/insights/:id` | 报告列表（含未读数）/ 详情 |
 | POST | `/api/insights/:id/feedback`、`/api/insights/:id/save` | 反馈 / 存为 memo |
-| GET / PUT | `/api/settings/ai` | Claude API key 状态 / 设置 |
+| GET / PUT | `/api/settings/ai` | Workers AI 洞察模型与 Claude API key 设置 |
 | GET / PUT | `/api/settings/auto-tags` | 按来源（CLI / API / MCP）自动加标签 |
 | GET / DELETE | `/api/wechat` | 微信连接状态 / 解绑 |
 | POST / GET | `/api/wechat/qrcode`、`/api/wechat/qrcode/status` | 获取二维码 / 查询扫码状态（长轮询） |
@@ -285,6 +285,7 @@ migrations/      # D1 schema
 | [`v0.2.0`](https://github.com/uxgnod/yaf/tree/v0.2.0) | AI 原生：混合检索、相关笔记、洞察、MCP、API Token、CLI、微信收录 |
 | [`v0.3.0`](https://github.com/uxgnod/yaf/tree/v0.3.0) | 视图（待办 / 隐私）和隐私 memo 遮挡 |
 | [`v0.4.0`](https://github.com/uxgnod/yaf/tree/v0.4.0) | AI 用量圆环、部署前检查、agent 安装 / 升级指引 |
+| [`v0.4.1`](https://github.com/uxgnod/yaf/tree/v0.4.1) | 可选 Workers AI 洞察模型与废弃提醒、Markdown 洞察报告、摘抄引用块 |
 
 每个版本的升级说明见 [CHANGELOG.md](CHANGELOG.md)。
 
