@@ -164,6 +164,15 @@ export interface Insight {
   content?: InsightContent | null;
 }
 
+export interface AiSettings {
+  hasClaudeKey: boolean;
+  workersAiModel: string;
+  workersAiThinking: boolean;
+  claudeModel: string;
+  modelDeprecated: boolean;
+  needsModelUpdate: boolean;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -275,9 +284,11 @@ export const api = {
     request(`/insights/${id}/feedback`, { method: "POST", body: json({ feedback }) }),
   saveInsight: (id: string) => request<{ memoId: string }>(`/insights/${id}/save`, { method: "POST" }),
   deleteInsight: (id: string) => request(`/insights/${id}`, { method: "DELETE" }),
-  aiSettings: () => request<{ hasClaudeKey: boolean; workersAiModel: string; claudeModel: string }>("/settings/ai"),
+  aiSettings: () => request<AiSettings>("/settings/ai"),
+  saveAiSettings: (body: { anthropicKey?: string | null; workersAiModel?: string; workersAiThinking?: boolean }) =>
+    request<AiSettings>("/settings/ai", { method: "PUT", body: json(body) }),
   setClaudeKey: (anthropicKey: string | null) =>
-    request<{ hasClaudeKey: boolean }>("/settings/ai", { method: "PUT", body: json({ anthropicKey }) }),
+    request<AiSettings>("/settings/ai", { method: "PUT", body: json({ anthropicKey }) }),
 
   autoTags: () => request<ChannelTags>("/settings/auto-tags"),
   setAutoTags: (patch: Partial<ChannelTags>) =>

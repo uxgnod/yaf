@@ -26,6 +26,7 @@ const JUDGE_POLL_MS = [2500, 6000];
 
 export function Home({ user, path, view, onLogout }: { user: User; path: string; view: "memos" | "insights"; onLogout: () => void }) {
   const [unreadInsights, setUnreadInsights] = useState(0);
+  const [aiWarn, setAiWarn] = useState(false);
   const [memos, setMemos] = useState<MemoHit[]>([]);
   const [mode, setMode] = useState<SearchMode>("hybrid");
   const [sort, setSort] = useState<SearchSort>("relevance");
@@ -65,6 +66,7 @@ export function Home({ user, path, view, onLogout }: { user: User; path: string;
     api.lenses().then((r) => setLenses(r.lenses), () => {});
     api.stats().then(setStats);
     api.listInsights().then((r) => setUnreadInsights(r.unread), () => {});
+    api.aiSettings().then((r) => setAiWarn(r.needsModelUpdate), () => {});
   }, []);
 
   const load = useCallback(
@@ -200,6 +202,7 @@ export function Home({ user, path, view, onLogout }: { user: User; path: string;
         onSelectLens={selectLens}
         view={view}
         unreadInsights={unreadInsights}
+        aiWarn={aiWarn}
         onSelectTag={selectTag}
         onExport={() => setExporting(true)}
         onLogout={onLogout}

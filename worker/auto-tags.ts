@@ -70,7 +70,16 @@ autoTags.get("/settings/auto-tags", requireUser, async (c) => c.json(await getCh
 autoTags.put("/settings/auto-tags", requireUser, async (c) => {
   const userId = c.get("user").id;
   const body = await c.req.json<Partial<Record<Channel, Partial<AutoTag>>>>();
-  const cfg = await getChannelTags(c.env.DB, userId);
+  const row = await c.env.DB.prepare("SELECT auto_tags FROM user_settings WHERE user_id = ?")
+    .bind(userId)
+    .first<{ auto_tags: string | null }>();
+  let extra: Record<string, unknown> = {};
+  try {
+    if (row?.auto_tags) extra = JSON.parse(row.auto_tags);
+  } catch {
+    /* 忽略损坏的配置 */
+  }
+  const cfg = parse(row?.auto_tags);
   for (const ch of CHANNELS) {
     const b = body[ch];
     if (!b) continue;
@@ -85,7 +94,7 @@ autoTags.put("/settings/auto-tags", requireUser, async (c) => {
     `INSERT INTO user_settings (user_id, auto_tags, updated_at) VALUES (?, ?, ?)
      ON CONFLICT(user_id) DO UPDATE SET auto_tags = excluded.auto_tags, updated_at = excluded.updated_at`,
   )
-    .bind(userId, JSON.stringify(cfg), Date.now())
+    .bind(userId, JSON.stringify({ ...extra, ...cfg }), Date.now())
     .run();
   return c.json(cfg);
 });

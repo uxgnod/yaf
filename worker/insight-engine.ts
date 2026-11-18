@@ -5,13 +5,15 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createWorkersAI } from "workers-ai-provider";
 import { z } from "zod";
 import type { Env } from "./env";
+import { DEFAULT_INSIGHT_MODEL, findInsightModel, LEGACY_INSIGHT_MODEL } from "../shared/ai-models";
 import { escapeLike } from "./memo-service";
 import { open } from "./lib/secret-box";
 import { RELATED_MIN } from "./search";
 
-// 实测（2026-10-25）：qwen3-30b-a3b 中文和结构化输出稳定、5–10 秒；qwen3.8-27b 质量更好但长输入会超时；
-// deepseek-v4 / glm-5.3 不在免费套餐；gpt-oss 结构化输出解析失败
-export const WORKERS_AI_MODEL = "@cf/qwen/qwen3-30b-a3b-fp8";
+// 实测（2026-10-25）：qwen3-30b-a3b 中文和结构化输出稳定、5–10 秒（将于 2026-11-20 下线）；
+// qwen3.8-27b / gemma-4-26b-a4b-it 需传 enable_thinking: false 关闭默认推理，否则长输入易超时；
+// deepseek-v4.1 / glm-5.3 需 Paid 套餐；gpt-oss 结构化输出偶发解析失败
+export const WORKERS_AI_MODEL = LEGACY_INSIGHT_MODEL;
 export const CLAUDE_MODEL = "claude-sonnet-5-5";
 const MAX_WINDOW = 150;
 const MAX_HISTORY = 30;
@@ -279,6 +281,36 @@ async function clusterWindow(env: Env, window: MaterialMemo[]): Promise<string[]
 
 // ---------- 模型 ----------
 
+/** 读取用户选择的 Workers AI 洞察模型与思考开关：
+ *  - 已手动保存过：使用保存值
+ *  - 未手动保存，但已有存量洞察计划（老版本升级用户）：保持 LEGACY_INSIGHT_MODEL，不静默替换，由界面提示更换
+ *  - 未手动保存，且无任何洞察计划（新安装或首次使用洞察）：默认使用 DEFAULT_INSIGHT_MODEL（qwen3.8-27b）
+ */
+export async function getUserInsightAiConfig(db: D1Database, userId: string): Promise<{ modelId: string; thinking: boolean }> {
+  const [row, hasPlan] = await Promise.all([
+    db.prepare("SELECT auto_tags FROM user_settings WHERE user_id = ?")
+      .bind(userId)
+      .first<{ auto_tags: string | null }>(),
+    db.prepare("SELECT 1 AS ok FROM insight_plans WHERE user_id = ? LIMIT 1")
+      .bind(userId)
+      .first<{ ok: number }>(),
+  ]);
+  let saved: { workersAiModel?: unknown; workersAiThinking?: unknown } = {};
+  try {
+    if (row?.auto_tags) saved = JSON.parse(row.auto_tags);
+  } catch {
+    /* 忽略损坏的配置 */
+  }
+  const fallback = hasPlan ? LEGACY_INSIGHT_MODEL : DEFAULT_INSIGHT_MODEL;
+  const modelId =
+    typeof saved.workersAiModel === "string" && findInsightModel(saved.workersAiModel)
+      ? saved.workersAiModel
+      : fallback;
+  const info = findInsightModel(modelId);
+  const thinking = info?.thinking === "always" ? true : info?.thinking === "toggle" ? saved.workersAiThinking === true : false;
+  return { modelId, thinking };
+}
+
 export async function getModel(env: Env, userId: string, choice: PlanConfig["model"]): Promise<{ model: LanguageModel; name: string }> {
   const gatewayId = env.AI_GATEWAY_ID || undefined;
   if (choice === "claude") {
@@ -290,8 +322,11 @@ export async function getModel(env: Env, userId: string, choice: PlanConfig["mod
     const baseURL = gatewayId ? `${await env.AI.gateway(gatewayId).getUrl("anthropic")}/v1` : undefined;
     return { model: createAnthropic({ apiKey, baseURL })(CLAUDE_MODEL), name: CLAUDE_MODEL };
   }
+  const { modelId, thinking } = await getUserInsightAiConfig(env.DB, userId);
+  const info = findInsightModel(modelId);
   const workersai = createWorkersAI({ binding: env.AI, ...(gatewayId ? { gateway: { id: gatewayId } } : {}) });
-  return { model: workersai(WORKERS_AI_MODEL), name: WORKERS_AI_MODEL };
+  const settings = info?.thinking === "toggle" ? { chat_template_kwargs: { enable_thinking: thinking } } : undefined;
+  return { model: workersai(modelId as never, settings as never), name: modelId };
 }
 
 const PERSPECTIVE: Record<string, string> = {

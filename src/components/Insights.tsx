@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, type Insight, type InsightItem, type InsightPlan, type Memo } from "../api";
+import { api, type AiSettings, type Insight, type InsightItem, type InsightPlan, type Memo } from "../api";
 import { renderMarkdown } from "../markdown";
 import { navigate } from "../router";
 
@@ -33,6 +33,7 @@ interface Props {
 export function InsightsPage({ path, onMenu, onUnreadChange }: Props) {
   const selectedId = path.split("/")[2] || null;
   const [plans, setPlans] = useState<InsightPlan[] | null>(null);
+  const [aiInfo, setAiInfo] = useState<AiSettings | null>(null);
   const [list, setList] = useState<Insight[] | null>(null);
   const [detail, setDetail] = useState<Insight | null>(null);
   const [busy, setBusy] = useState(false);
@@ -48,6 +49,7 @@ export function InsightsPage({ path, onMenu, onUnreadChange }: Props) {
 
   useEffect(() => {
     api.listPlans().then((r) => setPlans(r.plans));
+    api.aiSettings().then(setAiInfo, () => {});
     loadList().then((items) => {
       // 没有选中时默认打开最新一份
       if (!selectedId && items[0]) navigate(`/insights/${items[0].id}`);
@@ -125,6 +127,19 @@ export function InsightsPage({ path, onMenu, onUnreadChange }: Props) {
           ) : (
             <>还没有洞察计划。<a onClick={() => navigate("/settings/insights")}>创建一个</a>，按你设定的频率自动回顾笔记。</>
           )}
+        </div>
+      )}
+      {aiInfo?.needsModelUpdate && (
+        <div className="insight-warn-bar">
+          <div className="insight-warn-main">
+            <span className="lens-chip chip-danger">即将废弃</span>
+            <span>
+              当前洞察模型 <span className="mono">{aiInfo.workersAiModel.split("/").pop()}</span> 将于 11月20日 官方下线，届时将无法生成报告。
+            </span>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={() => navigate("/settings/insights")}>
+            更换模型 →
+          </button>
         </div>
       )}
       {error && <div className="form-error">{error}</div>}

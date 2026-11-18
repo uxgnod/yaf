@@ -6,7 +6,7 @@ import { requireUser } from "./auth";
 import { EMBED_MODEL } from "./search";
 import { CLEF_MODEL } from "./judge";
 import { VISION_MODEL } from "./wechat/media";
-import { WORKERS_AI_MODEL } from "./insight-engine";
+import { INSIGHT_MODELS } from "../shared/ai-models";
 
 /** Workers AI 每天免费 neurons，UTC 0 点重置 */
 const DAILY_FREE = 10_000;
@@ -16,7 +16,7 @@ const CACHE_TTL = 300;
 const FEATURES: { key: string; label: string; models: string[] }[] = [
   { key: "embed", label: "向量", models: [EMBED_MODEL] },
   { key: "vision", label: "图片描述", models: [VISION_MODEL] },
-  { key: "insight", label: "洞察", models: [WORKERS_AI_MODEL] },
+  { key: "insight", label: "洞察", models: INSIGHT_MODELS.map((m) => m.id) },
   { key: "judge", label: "分类", models: [CLEF_MODEL] },
 ];
 

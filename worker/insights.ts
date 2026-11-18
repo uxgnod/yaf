@@ -3,9 +3,10 @@ import { Cron } from "croner";
 import type { AppEnv, Env } from "./env";
 import { requireScope, requireUser } from "./auth";
 import { seal } from "./lib/secret-box";
+import { DEFAULT_INSIGHT_MODEL, findInsightModel, isModelDeprecated } from "../shared/ai-models";
 import { createMemo } from "./memo-service";
 import { scheduleIndex } from "./search";
-import { CLAUDE_MODEL, reportToMarkdown, WORKERS_AI_MODEL, type InsightContent, type PlanConfig } from "./insight-engine";
+import { CLAUDE_MODEL, getUserInsightAiConfig, reportToMarkdown, type InsightContent, type PlanConfig } from "./insight-engine";
 
 const CADENCES = ["daily", "weekly", "monthly", "custom"] as const;
 const PERSPECTIVES = ["balanced", "patterns", "actions", "questions"] as const;
@@ -144,11 +145,12 @@ function parsePlanInput(body: Record<string, unknown>, prev?: PlanRow) {
 export async function startInsight(env: Env, userId: string, plan: PlanConfig, now = Date.now()) {
   const id = crypto.randomUUID();
   const periodStart = now - plan.windowDays * 86400_000;
+  const modelName = plan.model === "claude" ? CLAUDE_MODEL : (await getUserInsightAiConfig(env.DB, userId)).modelId;
   await env.DB.prepare(
     `INSERT INTO insights (id, user_id, plan_id, plan_name, status, period_start, period_end, model, created_at)
      VALUES (?, ?, ?, ?, 'generating', ?, ?, ?, ?)`,
   )
-    .bind(id, userId, plan.id, plan.name, periodStart, now, plan.model === "claude" ? CLAUDE_MODEL : WORKERS_AI_MODEL, now)
+    .bind(id, userId, plan.id, plan.name, periodStart, now, modelName, now)
     .run();
   try {
     await env.INSIGHT_WORKFLOW.create({ id, params: { insightId: id, userId, plan, periodStart, periodEnd: now } });
@@ -263,15 +265,39 @@ insights.get("/insights/plans", requireUser, async (c) => {
 });
 
 insights.post("/insights/plans", requireUser, async (c) => {
+  const userId = c.get("user").id;
   const p = parsePlanInput(await c.req.json());
   const id = crypto.randomUUID();
   const now = Date.now();
+  // 首次创建计划且未显式选过模型的新用户：固定下当前的新默认模型，避免建完计划后被误判为旧版存量用户
+  const [hasPlan, settingsRow] = await Promise.all([
+    c.env.DB.prepare("SELECT 1 AS ok FROM insight_plans WHERE user_id = ? LIMIT 1").bind(userId).first<{ ok: number }>(),
+    c.env.DB.prepare("SELECT auto_tags FROM user_settings WHERE user_id = ?").bind(userId).first<{ auto_tags: string | null }>(),
+  ]);
+  if (!hasPlan) {
+    let extra: Record<string, unknown> = {};
+    try {
+      if (settingsRow?.auto_tags) extra = JSON.parse(settingsRow.auto_tags);
+    } catch {
+      /* 忽略 */
+    }
+    if (!extra.workersAiModel) {
+      extra.workersAiModel = DEFAULT_INSIGHT_MODEL;
+      extra.workersAiThinking = false;
+      await c.env.DB.prepare(
+        `INSERT INTO user_settings (user_id, auto_tags, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(user_id) DO UPDATE SET auto_tags = excluded.auto_tags, updated_at = excluded.updated_at`,
+      )
+        .bind(userId, JSON.stringify(extra), now)
+        .run();
+    }
+  }
   await c.env.DB.prepare(
     `INSERT INTO insight_plans (id, user_id, name, cadence, cron, timezone, scope_tags, window_days, perspective, extra_prompt,
        model, enabled, next_run_at, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
-    .bind(id, c.get("user").id, p.name, p.cadence, p.cron, p.timezone, p.scope_tags, p.window_days, p.perspective,
+    .bind(id, userId, p.name, p.cadence, p.cron, p.timezone, p.scope_tags, p.window_days, p.perspective,
       p.extra_prompt, p.model, p.enabled, p.next_run_at, now, now)
     .run();
   const row = await c.env.DB.prepare("SELECT * FROM insight_plans WHERE id = ?").bind(id).first<PlanRow>();
@@ -369,23 +395,76 @@ insights.delete("/insights/:id", requireUser, async (c) => {
 
 // ---------- 模型设置 ----------
 
+async function readAiSettings(db: D1Database, userId: string) {
+  const [row, activeWorkersPlan, cfg] = await Promise.all([
+    db.prepare("SELECT anthropic_key_enc FROM user_settings WHERE user_id = ?")
+      .bind(userId)
+      .first<{ anthropic_key_enc: string | null }>(),
+    db.prepare("SELECT 1 AS ok FROM insight_plans WHERE user_id = ? AND enabled = 1 AND model = 'workers-ai' LIMIT 1")
+      .bind(userId)
+      .first<{ ok: number }>(),
+    getUserInsightAiConfig(db, userId),
+  ]);
+  const modelDeprecated = isModelDeprecated(cfg.modelId);
+  return {
+    hasClaudeKey: !!row?.anthropic_key_enc,
+    workersAiModel: cfg.modelId,
+    workersAiThinking: cfg.thinking,
+    claudeModel: CLAUDE_MODEL,
+    modelDeprecated,
+    needsModelUpdate: Boolean(activeWorkersPlan) && modelDeprecated,
+  };
+}
+
 insights.get("/settings/ai", requireUser, async (c) => {
-  const row = await c.env.DB.prepare("SELECT anthropic_key_enc FROM user_settings WHERE user_id = ?")
-    .bind(c.get("user").id)
-    .first<{ anthropic_key_enc: string | null }>();
-  return c.json({ hasClaudeKey: !!row?.anthropic_key_enc, workersAiModel: WORKERS_AI_MODEL, claudeModel: CLAUDE_MODEL });
+  return c.json(await readAiSettings(c.env.DB, c.get("user").id));
 });
 
 insights.put("/settings/ai", requireUser, async (c) => {
-  const { anthropicKey } = await c.req.json<{ anthropicKey?: string | null }>();
-  const key = typeof anthropicKey === "string" ? anthropicKey.trim() : null;
-  if (key !== null && !/^sk-ant-[\w-]{20,}$/.test(key)) return c.json({ error: "API key 格式不正确（应以 sk-ant- 开头）" }, 400);
-  const enc = key ? await seal(c.env.ENCRYPTION_KEY, key) : null;
-  await c.env.DB.prepare(
-    `INSERT INTO user_settings (user_id, anthropic_key_enc, updated_at) VALUES (?, ?, ?)
-     ON CONFLICT(user_id) DO UPDATE SET anthropic_key_enc = excluded.anthropic_key_enc, updated_at = excluded.updated_at`,
-  )
-    .bind(c.get("user").id, enc, Date.now())
-    .run();
-  return c.json({ hasClaudeKey: !!enc });
+  const userId = c.get("user").id;
+  const body = await c.req.json<{ anthropicKey?: string | null; workersAiModel?: string; workersAiThinking?: boolean }>();
+  const now = Date.now();
+
+  if (body.anthropicKey !== undefined) {
+    const key = typeof body.anthropicKey === "string" ? body.anthropicKey.trim() : null;
+    if (key !== null && !/^sk-ant-[\w-]{20,}$/.test(key)) return c.json({ error: "API key 格式不正确（应以 sk-ant- 开头）" }, 400);
+    const enc = key ? await seal(c.env.ENCRYPTION_KEY, key) : null;
+    await c.env.DB.prepare(
+      `INSERT INTO user_settings (user_id, anthropic_key_enc, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET anthropic_key_enc = excluded.anthropic_key_enc, updated_at = excluded.updated_at`,
+    )
+      .bind(userId, enc, now)
+      .run();
+  }
+
+  if (body.workersAiModel !== undefined || body.workersAiThinking !== undefined) {
+    const row = await c.env.DB.prepare("SELECT auto_tags FROM user_settings WHERE user_id = ?")
+      .bind(userId)
+      .first<{ auto_tags: string | null }>();
+    let extra: Record<string, unknown> = {};
+    try {
+      if (row?.auto_tags) extra = JSON.parse(row.auto_tags);
+    } catch {
+      /* 忽略损坏的配置 */
+    }
+    if (body.workersAiModel !== undefined) {
+      const m = findInsightModel(body.workersAiModel);
+      if (!m) return c.json({ error: "不支持的 Workers AI 模型" }, 400);
+      extra.workersAiModel = m.id;
+      if (m.thinking === "always") extra.workersAiThinking = true;
+      else if (m.thinking === "none") extra.workersAiThinking = false;
+    }
+    if (body.workersAiThinking !== undefined) {
+      const curModel = findInsightModel(typeof extra.workersAiModel === "string" ? extra.workersAiModel : undefined);
+      extra.workersAiThinking = curModel?.thinking === "always" ? true : curModel?.thinking === "toggle" ? Boolean(body.workersAiThinking) : false;
+    }
+    await c.env.DB.prepare(
+      `INSERT INTO user_settings (user_id, auto_tags, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET auto_tags = excluded.auto_tags, updated_at = excluded.updated_at`,
+    )
+      .bind(userId, JSON.stringify(extra), now)
+      .run();
+  }
+
+  return c.json(await readAiSettings(c.env.DB, userId));
 });

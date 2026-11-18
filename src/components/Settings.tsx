@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { api, type ApiToken, type Channel, type ChannelTags, type Cadence, type IndexStatus, type InsightPlan, type Perspective, type PlanInput, type Scope, type TagCount, type User } from "../api";
+import { api, type AiSettings, type ApiToken, type Channel, type ChannelTags, type Cadence, type IndexStatus, type InsightPlan, type Perspective, type PlanInput, type Scope, type TagCount, type User } from "../api";
+import { findInsightModel, INSIGHT_MODELS, type InsightModelInfo } from "../../shared/ai-models";
 import { describeSchedule } from "./Insights";
 import { WechatSection } from "./Wechat";
 import { TagInput } from "./TagInput";
@@ -41,8 +42,14 @@ function relative(ts: number | null) {
 
 export function Settings({ user, path }: { user: User; path: string }) {
   const [open, setOpen] = useState(false);
+  const [aiInfo, setAiInfo] = useState<AiSettings | null>(null);
   const { theme, toggle } = useTheme();
   const current = SECTIONS.find((s) => path.startsWith(s.path)) ?? SECTIONS[0];
+
+  const refreshAi = () => api.aiSettings().then(setAiInfo, () => {});
+  useEffect(() => {
+    refreshAi();
+  }, []);
 
   useEffect(() => {
     if (path === "/settings" || path === "/settings/") history.replaceState(null, "", SECTIONS[0].path);
@@ -70,6 +77,9 @@ export function Settings({ user, path }: { user: User; path: string }) {
               }}
             >
               <span className="nav-icon">{s.icon}</span> {s.label}
+              {s.path === "/settings/insights" && aiInfo?.needsModelUpdate && (
+                <span className="dot dot-warn nav-dot" title="当前洞察模型即将废弃，请更新设置" />
+              )}
             </div>
           ))}
         </nav>
@@ -87,7 +97,7 @@ export function Settings({ user, path }: { user: User; path: string }) {
         {current.path === "/settings/account" && <AccountSection user={user} />}
         {current.path === "/settings/tokens" && <TokensSection />}
         {current.path === "/settings/wechat" && <WechatSection />}
-        {current.path === "/settings/insights" && <InsightsSearchSection />}
+        {current.path === "/settings/insights" && <InsightsSearchSection aiInfo={aiInfo} onAiChange={setAiInfo} onRefreshAi={refreshAi} />}
       </main>
     </div>
   );
@@ -396,11 +406,19 @@ function CreateTokenDialog({ onClose, onCreated }: { onClose: () => void; onCrea
 
 // ---------- 洞察与搜索 ----------
 
-function InsightsSearchSection() {
+function InsightsSearchSection({
+  aiInfo,
+  onAiChange,
+  onRefreshAi,
+}: {
+  aiInfo: AiSettings | null;
+  onAiChange: (info: AiSettings) => void;
+  onRefreshAi: () => void;
+}) {
   return (
     <div className="settings-stack">
-      <PlansCard />
-      <ModelCard />
+      <PlansCard onPlansChanged={onRefreshAi} />
+      <ModelCard info={aiInfo} onUpdated={onAiChange} />
       <SearchIndexCard />
     </div>
   );
@@ -415,11 +433,15 @@ const PERSPECTIVE_LABEL: Record<Perspective, string> = {
 };
 const WEEKDAY_NAMES = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
-function PlansCard() {
+function PlansCard({ onPlansChanged }: { onPlansChanged: () => void }) {
   const [plans, setPlans] = useState<InsightPlan[] | null>(null);
   const [editing, setEditing] = useState<InsightPlan | "new" | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const load = () => api.listPlans().then((r) => setPlans(r.plans));
+  const load = () =>
+    api.listPlans().then((r) => {
+      setPlans(r.plans);
+      onPlansChanged();
+    });
   useEffect(() => {
     load();
   }, []);
@@ -700,22 +722,175 @@ function PlanEditor({ plan, onClose, onSaved }: { plan: InsightPlan | null; onCl
   );
 }
 
-function ModelCard() {
-  const [info, setInfo] = useState<{ hasClaudeKey: boolean; workersAiModel: string; claudeModel: string } | null>(null);
-  const [key, setKey] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    api.aiSettings().then(setInfo);
-  }, []);
+type ModelTab = "free" | "paid" | "deprecated";
 
-  async function saveKey(value: string | null) {
+const MODEL_TABS: { key: ModelTab; label: string; filter: (m: InsightModelInfo) => boolean }[] = [
+  { key: "free", label: "免费可用", filter: (m) => !m.paidOnly && !m.deprecated },
+  { key: "paid", label: "Paid 套餐", filter: (m) => !!m.paidOnly && !m.deprecated },
+  { key: "deprecated", label: "即将废弃", filter: (m) => !!m.deprecated },
+];
+
+function tabOfModel(m: InsightModelInfo | undefined): ModelTab {
+  if (!m || m.deprecated) return "free"; // 当前若是废弃模型，弹窗默认直接打开「免费可用」方便挑选替代
+  return m.paidOnly ? "paid" : "free";
+}
+
+function ModelSelectDialog({
+  info,
+  onClose,
+  onSaved,
+}: {
+  info: AiSettings;
+  onClose: () => void;
+  onSaved: (next: AiSettings, msg: string) => void;
+}) {
+  const initialModel = findInsightModel(info.workersAiModel);
+  const [tab, setTab] = useState<ModelTab>(() => tabOfModel(initialModel));
+  const [modelId, setModelId] = useState<string>(info.workersAiModel);
+  const [thinking, setThinking] = useState<boolean>(info.workersAiThinking);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const selected = findInsightModel(modelId) ?? INSIGHT_MODELS[0];
+  const effectiveThinking = selected.thinking === "always" ? true : selected.thinking === "toggle" ? thinking : false;
+  const visibleModels = INSIGHT_MODELS.filter(MODEL_TABS.find((t) => t.key === tab)!.filter);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
     setError(null);
     setBusy(true);
     try {
+      const r = await api.saveAiSettings({ workersAiModel: selected.id, workersAiThinking: effectiveThinking });
+      onSaved(r, `已切换为「${selected.name}」`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="dialog-backdrop" onMouseDown={onClose}>
+      <form className="dialog dialog-wide" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}>
+        <h2>选择 Workers AI 洞察模型</h2>
+
+        <div className="segmented">
+          {MODEL_TABS.map((t) => {
+            const items = INSIGHT_MODELS.filter(t.filter);
+            const hasSelected = items.some((m) => m.id === selected.id);
+            return (
+              <button type="button" key={t.key} className={tab === t.key ? "on" : ""} onClick={() => setTab(t.key)}>
+                {t.label}（{items.length}）{hasSelected ? " · 已选" : ""}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="model-list" role="radiogroup" aria-label="Workers AI 模型">
+          {visibleModels.map((m) => {
+            const active = m.id === selected.id;
+            return (
+              <div
+                key={m.id}
+                role="radio"
+                aria-checked={active}
+                tabIndex={0}
+                title={m.id}
+                className={"model-item" + (active ? " active" : "")}
+                onClick={() => {
+                  setModelId(m.id);
+                  if (m.thinking === "always") setThinking(true);
+                  else setThinking(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setModelId(m.id);
+                    if (m.thinking === "always") setThinking(true);
+                    else setThinking(false);
+                  }
+                }}
+              >
+                <div className="model-item-head">
+                  <span className={"dot " + (active ? "dot-ok" : "dot-off")} />
+                  <span className="model-item-name">{m.name}</span>
+                  <span className="muted small">{m.params} · {m.context}</span>
+                  <span className="model-badges">
+                    {m.recommended && <span className="lens-chip">推荐</span>}
+                    {m.paidOnly && <span className="lens-chip lens-private">Paid</span>}
+                    {m.deprecated && <span className="lens-chip chip-danger">11-20 废弃</span>}
+                  </span>
+                </div>
+                <div className="model-item-sub small">
+                  <span className="model-item-desc">{m.summary}</span>
+                  <span className="mono muted">{m.id.replace(/^@cf\//, "")}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <label className={"thinking-row" + (selected.thinking !== "toggle" ? " disabled" : "")}>
+          <div className="thinking-info">
+            <div className="thinking-title">
+              思考模式
+              {selected.thinking === "toggle" && (
+                <span className={"lens-chip " + (effectiveThinking ? "chip-warn" : "lens-private")}>
+                  {effectiveThinking ? "已开启 · 易超时" : "推荐关闭"}
+                </span>
+              )}
+              {selected.thinking === "always" && <span className="lens-chip lens-private">强制开启 · 不可关</span>}
+              {selected.thinking === "none" && <span className="lens-chip lens-private">不支持</span>}
+            </div>
+            <div className="muted small">
+              {selected.thinking === "toggle" && "开启后会先输出长篇推理，耗时与用量翻倍，长窗口下易超时或解析失败"}
+              {selected.thinking === "always" && "官方接口对此模型强制开启推理，无法关闭；若笔记较多时超时可换用其他模型"}
+              {selected.thinking === "none" && "标准非推理模型，直接输出结构化报告"}
+            </div>
+          </div>
+          <input
+            type="checkbox"
+            disabled={selected.thinking !== "toggle"}
+            checked={effectiveThinking}
+            onChange={(e) => setThinking(e.target.checked)}
+          />
+        </label>
+
+        {error && <div className="form-error">{error}</div>}
+        <div className="dialog-actions">
+          {selected.deprecated ? (
+            <span className="danger-text small">将于 {selected.deprecated} 官方下线</span>
+          ) : selected.paidOnly ? (
+            <span className="muted small">需开通 Workers Paid 套餐</span>
+          ) : (
+            <span className="muted small">已选：{selected.name}</span>
+          )}
+          <span className="spacer" />
+          <button type="button" className="btn btn-ghost" onClick={onClose}>取消</button>
+          <button className="btn btn-primary" disabled={busy}>{busy ? "保存中…" : "保存"}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function ModelCard({ info, onUpdated }: { info: AiSettings | null; onUpdated: (info: AiSettings) => void }) {
+  const [picking, setPicking] = useState(false);
+  const [key, setKey] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const current = findInsightModel(info?.workersAiModel);
+
+  async function saveKey(value: string | null) {
+    setError(null);
+    setMsg(null);
+    setBusy(true);
+    try {
       const r = await api.setClaudeKey(value);
-      setInfo((i) => i && { ...i, hasClaudeKey: r.hasClaudeKey });
+      onUpdated(r);
       setKey("");
+      setMsg(value ? "Claude API key 已保存" : "Claude API key 已删除");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -725,35 +900,83 @@ function ModelCard() {
 
   return (
     <Card title="洞察模型" desc="默认用 Workers AI（免费额度内不收费）。也可以填自己的 Claude API key，在计划里选择 Claude，质量更高。">
-      {info && (
-        <div className="kv">
-          <span className="muted">Workers AI</span>
-          <span className="mono small">{info.workersAiModel}</span>
-          <span className="muted">Claude</span>
-          <span>
-            <span className="mono small">{info.claudeModel}</span> · {info.hasClaudeKey ? "已设置 key" : "未设置 key"}
-          </span>
+      {msg && <div className="form-ok">{msg}</div>}
+      {!info ? (
+        <div className="muted small">加载中…</div>
+      ) : (
+        <div className="token-list">
+          <div className="token-row">
+            <div className="token-main">
+              <div className="token-name">
+                <span className={"dot " + (info.modelDeprecated ? "dot-warn" : "dot-ok")} />
+                {current?.name ?? "Workers AI"}
+                <span className="mono muted small">{info.workersAiModel}</span>
+                {current?.paidOnly && <span className="lens-chip lens-private">Paid 套餐</span>}
+                {info.workersAiThinking && <span className="lens-chip lens-private">思考已开启</span>}
+                {current?.deprecated && <span className="lens-chip chip-danger">{current.deprecated} 废弃</span>}
+              </div>
+              <div className="muted small">
+                {current
+                  ? `${current.vendor} · ${current.params} · ${current.context} 上下文 · 思考模式：${info.workersAiThinking ? "开启" : "关闭"}`
+                  : "Workers AI"}
+              </div>
+              {info.modelDeprecated && (
+                <div className="danger-text small">
+                  该模型将于 {current?.deprecated ?? "2026-11-20"} 被 Cloudflare 官方下线（届时生成会报 410 错误），请更换模型。
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              className={"btn btn-sm " + (info.modelDeprecated ? "btn-primary" : "btn-ghost")}
+              onClick={() => setPicking(true)}
+            >
+              更换模型
+            </button>
+          </div>
+
+          <div className="token-row">
+            <div className="token-main">
+              <div className="token-name">
+                <span className={"dot " + (info.hasClaudeKey ? "dot-ok" : "dot-off")} />
+                Claude
+                <span className="mono muted small">{info.claudeModel}</span>
+                <span className="lens-chip lens-private">{info.hasClaudeKey ? "已设置 key" : "未设置 key"}</span>
+              </div>
+              <form
+                className="form-row"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (key.trim()) saveKey(key.trim());
+                }}
+              >
+                <label className="grow">
+                  <span>Claude API key（加密保存，不会再显示）</span>
+                  <input type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-ant-…" />
+                </label>
+                <button className="btn btn-primary btn-sm form-row-btn" disabled={busy || !key.trim()}>保存</button>
+                {info.hasClaudeKey && (
+                  <button type="button" className="btn btn-ghost btn-sm form-row-btn danger-text" disabled={busy} onClick={() => saveKey(null)}>
+                    删除 key
+                  </button>
+                )}
+              </form>
+            </div>
+          </div>
         </div>
       )}
-      <form
-        className="form-row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (key.trim()) saveKey(key.trim());
-        }}
-      >
-        <label className="grow">
-          <span>Claude API key（加密保存，不会再显示）</span>
-          <input type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-ant-…" />
-        </label>
-        <button className="btn btn-primary btn-sm form-row-btn" disabled={busy || !key.trim()}>保存</button>
-        {info?.hasClaudeKey && (
-          <button type="button" className="btn btn-ghost btn-sm form-row-btn danger-text" disabled={busy} onClick={() => saveKey(null)}>
-            删除 key
-          </button>
-        )}
-      </form>
       {error && <div className="form-error">{error}</div>}
+      {picking && info && (
+        <ModelSelectDialog
+          info={info}
+          onClose={() => setPicking(false)}
+          onSaved={(next, text) => {
+            setPicking(false);
+            onUpdated(next);
+            setMsg(text);
+          }}
+        />
+      )}
     </Card>
   );
 }

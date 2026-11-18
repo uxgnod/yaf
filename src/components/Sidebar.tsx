@@ -143,8 +143,8 @@ const THEME_LABEL: Record<string, string> = { system: "跟随系统", light: "�
 
 /** 账户菜单：主题、设置、导出，分隔线下是退出登录 */
 function AccountMenu({
-  user, onExport, onLogout, theme, onToggleTheme, open, onToggle, onClose,
-}: Pick<Props, "user" | "onExport" | "onLogout" | "theme" | "onToggleTheme"> & { open: boolean; onToggle: () => void; onClose: () => void }) {
+  user, aiWarn, onExport, onLogout, theme, onToggleTheme, open, onToggle, onClose,
+}: Pick<Props, "user" | "aiWarn" | "onExport" | "onLogout" | "theme" | "onToggleTheme"> & { open: boolean; onToggle: () => void; onClose: () => void }) {
   const pick = (fn: () => void) => () => {
     onClose();
     fn();
@@ -156,7 +156,10 @@ function AccountMenu({
           <button role="menuitem" onClick={onToggleTheme}>
             主题<span className="menu-value">{THEME_LABEL[theme] ?? theme}</span>
           </button>
-          <button role="menuitem" onClick={pick(() => navigate("/settings/account"))}>设置</button>
+          <button role="menuitem" onClick={pick(() => navigate(aiWarn ? "/settings/insights" : "/settings/account"))}>
+            设置
+            {aiWarn && <span className="menu-value danger-text">模型即将废弃</span>}
+          </button>
           <button role="menuitem" onClick={pick(onExport)}>导出</button>
           <div className="menu-sep" />
           <button role="menuitem" onClick={pick(onLogout)}>退出登录</button>
@@ -165,6 +168,9 @@ function AccountMenu({
       <button className={"account-btn" + (open ? " open" : "")} aria-haspopup="menu" aria-expanded={open} onClick={onToggle}>
         <span className="avatar">{(user.name || user.email)[0].toUpperCase()}</span>
         <span className="user-name" title={user.email}>{user.name || user.email}</span>
+        {aiWarn && (
+          <span className="dot dot-warn" title="洞察使用的 Workers AI 模型即将废弃，请前往「设置 › 洞察与搜索」更换" />
+        )}
         <svg className="account-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="m6 9 6 6 6-6" />
         </svg>
@@ -296,6 +302,7 @@ interface Props {
   onSelectLens: (lens: string) => void;
   view: "memos" | "insights";
   unreadInsights: number;
+  aiWarn?: boolean;
   onSelectTag: (tag: string | null) => void;
   onExport: () => void;
   onLogout: () => void;
@@ -304,7 +311,7 @@ interface Props {
 }
 
 export function Sidebar(props: Props) {
-  const { stats, tags, lenses, activeTag, activeLens, onSelectLens, view, unreadInsights, onSelectTag } = props;
+  const { stats, tags, lenses, activeTag, activeLens, onSelectLens, view, unreadInsights, aiWarn, onSelectTag } = props;
   const tree = useMemo(() => buildTree(tags), [tags]);
   return (
     <aside className="sidebar">
@@ -325,6 +332,9 @@ export function Sidebar(props: Props) {
         </div>
         <div className={"nav-item" + (view === "insights" ? " active" : "")} onClick={() => navigate("/insights")}>
           <span className="nav-icon">✦</span> 洞察
+          {aiWarn && unreadInsights === 0 && (
+            <span className="dot dot-warn nav-dot" title="当前洞察模型即将废弃，请前往设置更新" />
+          )}
           {unreadInsights > 0 && <span className="new-badge">{unreadInsights} 新</span>}
         </div>
       </nav>
